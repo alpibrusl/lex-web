@@ -8,11 +8,7 @@
 #   - Response builders: json, created, not_found, problem
 #   - CORS + logger middleware via use_mw()
 #   - OpenAPI export served at /openapi.json
-#   - Dispatch via a named wrapper (until lex-lang#354 lands)
-#
-# Validators and schema helpers are accessed through src/test_fixtures
-# so the module identity matches body.lex and router.lex (all three
-# import lex-data from the same relative-path chain).
+#   - net.serve_fn with a closure handler (lex-lang v0.9.0 / #354)
 #
 # Run:
 #   lex run --allow-effects io,net,time \
@@ -110,20 +106,16 @@ fn app() -> router.Router {
 }
 
 # ---- Entry point -------------------------------------------------
-#
-# net.serve currently takes a handler-name string (lex-lang#354).
-# The `handle` wrapper adapts our router to that interface.
-# Once #354 lands this collapses to: net.serve(8080, app())
 
-fn handle(req :: ctx.RawRequest) -> [io, time] resp.RawResponse {
-  resp.to_raw(router.dispatch(app(), req))
+fn handle(req :: ctx.RawRequest) -> [io, time] resp.Response {
+  router.dispatch(app(), req)
 }
 
-fn main() -> [net, io] Nil {
+fn main() -> [net, io, time] Nil {
   let doc_size := str.len(openapi.export_openapi_str(
     app(), openapi.make_info("Users API", "0.1.0")))
   let _ := io.print(str.concat(
     "OpenAPI doc ready: ",
     str.concat(int.to_str(doc_size), " bytes")))
-  net.serve(8080, "handle")
+  net.serve_fn(8080, handle)
 }

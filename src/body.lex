@@ -24,10 +24,10 @@ import "std.map" as map
 import "./ctx"      as ctx
 import "./response" as resp
 
-import "../../lex-data/src/validator"  as v
-import "../../lex-data/src/json_value" as jv
-import "../../lex-data/src/error"      as e
-import "../../lex-data/src/form"       as form
+import "lex-data/validator"  as v
+import "lex-data/json_value" as jv
+import "lex-data/error"      as e
+import "lex-data/form"       as form
 
 # ---- JSON body ---------------------------------------------------
 

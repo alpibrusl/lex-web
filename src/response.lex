@@ -1,9 +1,8 @@
 # lex-web — response builders
 #
-# Typed constructors for every common HTTP response shape. The
-# `Response` record carries a `headers` field that will be sent
-# on the wire once lex-lang#355 lands. Until then, `to_raw()`
-# strips it for net.serve compatibility.
+# Typed constructors for every common HTTP response shape.
+# `Response` (body, status, headers) is the native net.serve_fn
+# response type as of lex-lang v0.9.0 (#355).
 #
 # Effects: none.
 
@@ -11,24 +10,14 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 
-import "../../lex-data/src/error"   as e
-import "../../lex-data/src/problem" as prob
+import "lex-data/error"   as e
+import "lex-data/problem" as prob
 
-# Full response value. Headers use lower-cased names per HTTP/2
-# convention. net.serve currently ignores the headers field
-# (see lex-lang#355); middleware still sets it so the upgrade
-# is transparent.
+# Response value. Headers use lower-cased names per HTTP/2 convention.
 type Response = {
   body    :: Str,
   status  :: Int,
   headers :: Map[Str, Str],
-}
-
-# Two-field form that the current net.serve runtime accepts.
-type RawResponse = { body :: Str, status :: Int }
-
-fn to_raw(resp :: Response) -> RawResponse {
-  { body: resp.body, status: resp.status }
 }
 
 # ---- 2xx builders ------------------------------------------------

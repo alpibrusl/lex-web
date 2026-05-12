@@ -1,6 +1,6 @@
 # lex-web
 
-HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang), built on [lex-schema](https://github.com/alpibrusl/lex-data) for request validation.
+HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang), built on [lex-data](https://github.com/alpibrusl/lex-data) for request validation.
 
 ## Modules
 
@@ -12,6 +12,7 @@ HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang), bu
 | `src/middleware.lex` | `MwCors`, `MwBodyLimit`, `MwRequestId`, `MwLogger` |
 | `src/body.lex` | `json_body`, `require_json_body`, `form_body`, `form_body_raw`, `raw_body` |
 | `src/openapi.lex` | Auto-generates OpenAPI 3.1 from the route table |
+| `src/ws.lex` | WebSocket server — `serve()`, path helpers, frame helpers |
 | `src/testing.lex` | Pure test helpers: request builders + `assert_*` assertions |
 | `src/test_fixtures.lex` | Sample validators for use in tests and examples |
 | `src/web.lex` | Facade that groups all modules under one import |
@@ -35,6 +36,14 @@ fn app() -> router.Router {
     |> fn (r :: router.Router) -> router.Router {
          router.route(r, "GET", "/greet/:name", greet)
        }
+}
+
+fn handle(req :: ctx.RawRequest) -> [io, time] resp.Response {
+  router.dispatch(app(), req)
+}
+
+fn main() -> [net, io, time] Nil {
+  net.serve_fn(8080, handle)
 }
 ```
 
@@ -72,7 +81,7 @@ Middlewares run in registration order. Pre-middleware (body_limit) can short-cir
 
 ## Request validation
 
-Attach a [lex-schema](https://github.com/alpibrusl/lex-data) `Validator` to a route and lex-web validates the JSON body automatically:
+Attach a [lex-data](https://github.com/alpibrusl/lex-data) `Validator` to a route and lex-web validates the JSON body automatically:
 
 ```lex
 import "../src/test_fixtures" as tf
@@ -95,6 +104,26 @@ Validators also drive `openapi.export_openapi` — routes with a Validator get a
 let doc := openapi.export_openapi_str(
   app(), openapi.make_info("My API", "1.0.0"))
 ```
+
+## WebSocket
+
+```lex
+import "../src/ws" as ws
+
+fn on_message(conn :: WsConn, msg :: WsMessage) -> WsAction {
+  match msg {
+    WsText(frame) => ws.send(handle_frame(conn, frame)),
+    WsClose       => WsNoOp,
+    _             => WsNoOp,
+  }
+}
+
+fn main() -> [net] Nil {
+  ws.serve(9000, "ocpp1.6", on_message)
+}
+```
+
+`WsConn`, `WsMessage`, and `WsAction` are global builtin types (no import needed). See `src/ws.lex` for path helpers (`last_segment`, `segment`) and frame helpers (`text_frame`, `is_close`).
 
 ## Testing
 
@@ -120,20 +149,34 @@ fn run_all() -> Int {
 }
 ```
 
-Run with `lex run tests/test_router.lex run_all`.
+Run with `lex test` (runs all `tests/test_*.lex` files automatically).
 
-## Blocked on upstream issues
+## Package setup (lex.toml)
 
-- **lex-lang#354** — `net.serve` cannot take a handler closure yet. Use a named wrapper: `fn handle(req :: ctx.RawRequest) -> [io, time] resp.RawResponse { resp.to_raw(router.dispatch(app(), req)) }`.
-- **lex-lang#355** — `net.serve` does not forward response headers. Headers are set correctly in the `Response` record and will propagate once #355 ships.
+lex-web declares its lex-data dependency in `lex.toml`:
 
-## Import paths
+```toml
+[package]
+name = "lex-web"
+version = "0.1.0"
 
-Lex resolves imports by relative filesystem path. Import lex-web modules relative to your file:
+[dependencies]
+lex-data = { path = "../lex-data" }
+```
+
+Internal imports use the package name instead of relative paths:
+
+```lex
+import "lex-data/validator" as v
+```
+
+For your own application, import lex-web modules relative to your file:
 
 ```lex
 import "../src/ctx"    as ctx   # from tests/ or examples/
 import "../src/router" as router
 ```
 
-For lex-schema types (Validator, Json …), always import through a lex-web `src/` module rather than directly — importing lex-data from `tests/` or `examples/` produces a different module identity and causes type errors. See `src/test_fixtures.lex` for the pattern.
+## Import paths
+
+Lex resolves imports by relative filesystem path. Import lex-web modules relative to your file. For lex-data types (`Validator`, `Json`, …) use `src/test_fixtures.lex` or import via lex.toml package names — both approaches are safe since lex-lang v0.9.0 (#358, path canonicalization).

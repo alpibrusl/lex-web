@@ -11,14 +11,15 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 
-# Mirrors the Request record that net.serve passes to every handler.
+# Mirrors the Request record that net.serve_fn passes to every handler.
 # Defined locally so this module has no std.net import dependency;
 # callers that already import std.net can use structural equivalence.
 type RawRequest = {
-  body   :: Str,
-  method :: Str,
-  path   :: Str,
-  query  :: Str,
+  body    :: Str,
+  method  :: Str,
+  path    :: Str,
+  query   :: Str,
+  headers :: Map[Str, Str],
 }
 
 # Enriched context threaded through every handler and middleware.
@@ -40,7 +41,7 @@ fn from_request(req :: RawRequest, params :: Map[Str, Str]) -> Ctx {
     query:       req.query,
     body:        req.body,
     path_params: params,
-    headers:     map.new(),
+    headers:     req.headers,
   }
 }
 

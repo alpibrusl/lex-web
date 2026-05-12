@@ -1,79 +1,61 @@
 # lex-web — WebSocket support
 #
-# Thin wrapper over the net.serve_ws primitive (lex-lang#359).
+# Thin wrapper over net.serve_ws_fn (lex-lang v0.9.0 / #359).
+#
+# WsConn, WsMessage, and WsAction are global builtin types —
+# no import needed. This module adds the serve() entry point,
+# convenience constructors, and path helpers.
+#
+# Global types (from lex-lang v0.9.0):
+#   WsConn    = { id :: Str, path :: Str, subprotocol :: Str }
+#   WsMessage = WsText(Str) | WsBinary(List[Int]) | WsPing | WsClose
+#   WsAction  = WsSend(Str) | WsSendBinary(List[Int]) | WsNoOp
 #
 # Usage pattern (OCPP, LSP, or any WS protocol):
 #
 #   import "../src/ws" as ws
 #
-#   fn on_message(conn :: ws.Conn, msg :: ws.Message) -> [io] ws.Action {
+#   fn on_message(conn :: WsConn, msg :: WsMessage) -> WsAction {
 #     match msg {
-#       WsText(frame) => WsReply(handle_frame(conn, frame)),
-#       WsClose       => WsIgnore,
-#       _             => WsIgnore,
+#       WsText(frame) => ws.send(handle_frame(conn, frame)),
+#       WsClose       => WsNoOp,
+#       _             => WsNoOp,
 #     }
 #   }
 #
 #   fn main() -> [net] Nil {
-#     ws.serve(9000, "ocpp1.6", "on_message")
+#     ws.serve(9000, "ocpp1.6", on_message)
 #   }
 #
 # Effects:
-#   ws.serve        — [net]
-#   message handler — declared by the handler itself (e.g. [io])
-#
-# Blocked on lex-lang#359 (net.serve_ws primitive).
-# The types and helpers below are defined now so lex-ocpp and other
-# consumers can be written against a stable surface.
+#   ws.serve — [net]
+#   message handler — declared by the handler itself
 
 import "std.str"  as str
 import "std.list" as list
 
-# ---- Connection handle -------------------------------------------
+# ---- Entry point ---------------------------------------------------
 
-# Opaque per-connection context passed to every message handler.
-# `id`          — stable string identity for this connection (use as
-#                 a store key for per-connection state).
-# `path`        — HTTP upgrade request path (e.g. "/ocpp/charger-01").
-# `subprotocol` — negotiated Sec-WebSocket-Protocol value.
-type Conn = {
-  id          :: Str,
-  path        :: Str,
+# Start a WebSocket server on `port` negotiating `subprotocol`
+# (pass "" for no subprotocol). `handler` is called for every
+# inbound frame; return WsNoOp to send nothing.
+fn serve(
+  port        :: Int,
   subprotocol :: Str,
+  handler     :: (WsConn, WsMessage) -> WsAction
+) -> [net] Nil {
+  net.serve_ws_fn(port, subprotocol, handler)
 }
 
-# ---- Incoming message types --------------------------------------
+# ---- Convenience constructors -------------------------------------
 
-# Text covers all JSON-over-WS protocols (OCPP, JSON-RPC, LSP).
-# Binary is for binary-framed protocols.
-# WsPing is received when the client sends a ping frame.
-# WsClose is received when the client initiates a graceful close.
-type Message =
-    WsText(Str)
-  | WsBinary(List[Int])
-  | WsPing
-  | WsClose
-
-# ---- Handler response actions ------------------------------------
-
-# What the runtime should do after the handler returns.
-# WsReply(s)  — send a UTF-8 text frame back to the client.
-# WsHangup    — close this connection gracefully.
-# WsIgnore    — nothing to send (fire-and-forget; pings auto-ponged).
-type Action =
-    WsReply(Str)
-  | WsHangup
-  | WsIgnore
-
-# ---- Convenience constructors ------------------------------------
-
-fn reply(frame :: Str) -> Action { WsReply(frame) }
-fn hangup() -> Action { WsHangup }
-fn ignore() -> Action { WsIgnore }
+fn send(frame :: Str) -> WsAction { WsSend(frame) }
+fn send_binary(bytes :: List[Int]) -> WsAction { WsSendBinary(bytes) }
+fn noop() -> WsAction { WsNoOp }
 
 # ---- Path helpers ------------------------------------------------
 
-# Extract the last segment of the upgrade path.
+# Extract the last non-empty segment of the upgrade path.
 # last_segment("/ocpp/charger-42") == "charger-42"
 fn last_segment(path :: Str) -> Str {
   let segs := list.filter(str.split(path, "/"),
@@ -104,7 +86,7 @@ fn segment(path :: Str, idx :: Int) -> Option[Str] {
 # ---- Frame helpers -----------------------------------------------
 
 # Unwrap a WsText frame; return None for non-text messages.
-fn text_frame(msg :: Message) -> Option[Str] {
+fn text_frame(msg :: WsMessage) -> Option[Str] {
   match msg {
     WsText(s) => Some(s),
     _         => None,
@@ -112,6 +94,6 @@ fn text_frame(msg :: Message) -> Option[Str] {
 }
 
 # True if the message is a graceful close request from the client.
-fn is_close(msg :: Message) -> Bool {
+fn is_close(msg :: WsMessage) -> Bool {
   match msg { WsClose => true, _ => false }
 }
