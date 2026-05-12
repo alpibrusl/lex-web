@@ -14,14 +14,12 @@
 # the available kinds.
 #
 # Effects: dispatch is [io] when the middleware stack includes
-# MwLogger. Pure handlers remain pure; the [io] surface is
-# contained to the dispatch call site.
+# MwLogger. dispatch_pure is effect-free and intended for tests.
 
 import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 import "std.io"   as io
-import "std.time" as time
 
 import "./ctx"        as ctx
 import "./response"   as resp
@@ -95,30 +93,35 @@ fn add_record(
 
 # ---- Dispatch ----------------------------------------------------
 
-# Dispatch one raw request through the full middleware + route
-# stack. Returns a Response ready to pass to resp.to_raw() before
-# handing back to net.serve.
-#
-# Current limitation: net.serve takes a string handler name, not a
-# closure, so callers must wrap this call in a named top-level fn.
-# web.serve(port, router) becomes available once lex-lang#354 lands.
-#
-#   fn handle(req :: ctx.RawRequest) -> ctx.RawResponse {
-#     resp.to_raw(dispatch(app, req))
-#   }
-#   fn main() -> [net] Nil { net.serve(8080, "handle") }
+# Full dispatch: runs the middleware stack. Effect is [io] due to
+# MwLogger writing to stdout. Use dispatch_pure in tests.
 fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io] resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
-  let response  := match find_match(r.routes, method, path_segs) {
+  match find_match(r.routes, method, path_segs) {
     None          => resp.not_found(),
     Some(matched) => {
       let record := match matched { (rec, _) => rec }
       let params := match matched { (_, p)   => p   }
-      run_with_middleware(r.middleware, record, ctx.from_request(req, params))
+      run_with_middleware(
+        r.middleware, record, ctx.from_request(req, params))
     },
   }
-  response
+}
+
+# Pure dispatch: skips all middleware, runs the matched handler
+# directly. Intended for unit tests; not for production use.
+fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
+  let method    := str.to_upper(req.method)
+  let path_segs := split_path(req.path)
+  match find_match(r.routes, method, path_segs) {
+    None          => resp.not_found(),
+    Some(matched) => {
+      let record := match matched { (rec, _) => rec }
+      let params := match matched { (_, p)   => p   }
+      record.handler(ctx.from_request(req, params))
+    },
+  }
 }
 
 # Apply pre-middleware, run the handler, apply post-middleware.
@@ -180,7 +183,7 @@ fn match_segments(
         Some(map.set(params, name, rest_str))
       } else {
         match list.head(actual) {
-          None      => None,
+          None        => None,
           Some(a_seg) => {
             let rest_a := list.tail(actual)
             if str.starts_with(p_seg, ":") {
