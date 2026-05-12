@@ -34,4 +34,5 @@ import "./router"     as router
 import "./middleware" as middleware
 import "./body"       as body
 import "./openapi"    as openapi
+import "./ws"         as ws
 import "./testing"    as testing
