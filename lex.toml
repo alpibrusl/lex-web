@@ -1,0 +1,6 @@
+[package]
+name = "lex-web"
+version = "0.1.0"
+
+[dependencies]
+lex-schema = { path = "../lex-data" }
