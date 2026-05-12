@@ -11,8 +11,8 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 
-import "lex-schema/error"   as e
-import "lex-schema/problem" as prob
+import "../../lex-data/src/error"   as e
+import "../../lex-data/src/problem" as prob
 
 # Full response value. Headers use lower-cased names per HTTP/2
 # convention. net.serve currently ignores the headers field

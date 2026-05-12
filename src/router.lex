@@ -25,7 +25,7 @@ import "./ctx"        as ctx
 import "./response"   as resp
 import "./middleware" as mw
 
-import "lex-schema/validator" as v
+import "../../lex-data/src/validator" as v
 
 # ---- Types -------------------------------------------------------
 
@@ -33,13 +33,13 @@ type RouteRecord = {
   method    :: Str,
   pattern   :: Str,
   segments  :: List[Str],
-  handler   :: Fn(ctx.Ctx) -> resp.Response,
+  handler   :: (ctx.Ctx) -> resp.Response,
   validator :: Option[v.Validator],
 }
 
 type Router = {
-  routes:     List[RouteRecord],
-  middleware: List[mw.MiddlewareKind],
+  routes     :: List[RouteRecord],
+  middleware :: List[mw.MiddlewareKind],
 }
 
 # ---- Construction ------------------------------------------------
@@ -50,7 +50,7 @@ fn route(
   r       :: Router,
   method  :: Str,
   pattern :: Str,
-  handler :: Fn(ctx.Ctx) -> resp.Response
+  handler :: (ctx.Ctx) -> resp.Response
 ) -> Router {
   add_record(r, method, pattern, handler, None)
 }
@@ -63,7 +63,7 @@ fn handler_json(
   method    :: Str,
   pattern   :: Str,
   validator :: v.Validator,
-  handler   :: Fn(ctx.Ctx) -> resp.Response
+  handler   :: (ctx.Ctx) -> resp.Response
 ) -> Router {
   add_record(r, method, pattern, handler, Some(validator))
 }
@@ -78,7 +78,7 @@ fn add_record(
   r         :: Router,
   method    :: Str,
   pattern   :: Str,
-  handler   :: Fn(ctx.Ctx) -> resp.Response,
+  handler   :: (ctx.Ctx) -> resp.Response,
   validator :: Option[v.Validator]
 ) -> Router {
   let rec := {
@@ -95,7 +95,7 @@ fn add_record(
 
 # Full dispatch: runs the middleware stack. Effect is [io] due to
 # MwLogger writing to stdout. Use dispatch_pure in tests.
-fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io] resp.Response {
+fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time] resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match find_match(r.routes, method, path_segs) {
@@ -129,10 +129,10 @@ fn run_with_middleware(
   mws    :: List[mw.MiddlewareKind],
   record :: RouteRecord,
   c      :: ctx.Ctx
-) -> [io] resp.Response {
+) -> [io, time] resp.Response {
   match mw.run_pre(mws, c) {
-    mw.Short(early) => mw.run_post(mws, c, early),
-    mw.Continue(c2) => {
+    Short(early) => mw.run_post(mws, c, early),
+    Continue(c2) => {
       let raw_resp := record.handler(c2)
       mw.run_post(mws, c2, raw_resp)
     },

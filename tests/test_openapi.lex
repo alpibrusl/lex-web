@@ -1,33 +1,23 @@
 # Tests for src/openapi.lex — OpenAPI 3.1 document generation.
+#
+# Uses export_openapi_str (returns Str) so the test file does not
+# need to import lex-data/json_value directly. Validators come from
+# src/test_fixtures so the module identity matches router.lex.
 
 import "std.list" as list
 import "std.str"  as str
 import "std.map"  as map
 
-import "../src/ctx"      as ctx
-import "../src/response" as resp
-import "../src/router"   as router
-import "../src/openapi"  as openapi
-import "../src/testing"  as t
-
-import "lex-schema/schema"      as s
-import "lex-schema/constraints" as c
-import "lex-schema/validator"   as v
-import "lex-schema/json_value"  as jv
+import "../src/ctx"           as ctx
+import "../src/response"      as resp
+import "../src/router"        as router
+import "../src/openapi"       as openapi
+import "../src/testing"       as t
+import "../src/test_fixtures" as tf
 
 # ---- Helpers -----------------------------------------------------
 
 fn noop_handler(c :: ctx.Ctx) -> resp.Response { resp.no_content() }
-
-fn item_validator() -> v.Validator {
-  v.make({
-    title: "Item", description: "",
-    fields: [
-      s.required_str("name",  [c.StrNonEmpty]),
-      s.required_int("qty",   [c.IntPositive]),
-    ],
-  })
-}
 
 # ---- openapi_path conversion ------------------------------------
 
@@ -62,7 +52,7 @@ fn param_route_emits_parameter_object() -> Result[Unit, Str] {
     |> fn (r :: router.Router) -> router.Router {
          router.route(r, "GET", "/users/:id", noop_handler)
        }
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("T", "1")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("T", "1"))
   if str.contains(doc, "\"in\":\"path\"") and str.contains(doc, "\"name\":\"id\"")
   { Ok(()) }
   else { Err(str.concat("param object missing in: ", doc)) }
@@ -73,7 +63,7 @@ fn static_route_no_parameter_objects() -> Result[Unit, Str] {
     |> fn (r :: router.Router) -> router.Router {
          router.route(r, "GET", "/health", noop_handler)
        }
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("T", "1")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("T", "1"))
   if not (str.contains(doc, "\"in\":\"path\"")) { Ok(()) }
   else { Err("unexpected path param in static route") }
 }
@@ -83,9 +73,9 @@ fn static_route_no_parameter_objects() -> Result[Unit, Str] {
 fn route_with_validator_has_request_body() -> Result[Unit, Str] {
   let r := router.new()
     |> fn (r :: router.Router) -> router.Router {
-         router.handler_json(r, "POST", "/items", item_validator(), noop_handler)
+         router.handler_json(r, "POST", "/items", tf.item_validator(), noop_handler)
        }
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("T", "1")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("T", "1"))
   if str.contains(doc, "requestBody") and str.contains(doc, "application/json")
   { Ok(()) }
   else { Err(str.concat("requestBody missing: ", doc)) }
@@ -96,7 +86,7 @@ fn route_without_validator_has_no_request_body() -> Result[Unit, Str] {
     |> fn (r :: router.Router) -> router.Router {
          router.route(r, "GET", "/items", noop_handler)
        }
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("T", "1")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("T", "1"))
   if not (str.contains(doc, "requestBody")) { Ok(()) }
   else { Err("unexpected requestBody on GET route") }
 }
@@ -104,9 +94,9 @@ fn route_without_validator_has_no_request_body() -> Result[Unit, Str] {
 fn validator_schema_fields_in_doc() -> Result[Unit, Str] {
   let r := router.new()
     |> fn (r :: router.Router) -> router.Router {
-         router.handler_json(r, "POST", "/items", item_validator(), noop_handler)
+         router.handler_json(r, "POST", "/items", tf.item_validator(), noop_handler)
        }
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("T", "1")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("T", "1"))
   if str.contains(doc, "\"name\"") and str.contains(doc, "\"qty\"")
   { Ok(()) }
   else { Err(str.concat("schema fields missing: ", doc)) }
@@ -116,22 +106,19 @@ fn validator_schema_fields_in_doc() -> Result[Unit, Str] {
 
 fn doc_has_openapi_version() -> Result[Unit, Str] {
   let r   := router.new()
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("My API", "2.0.0")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("My API", "2.0.0"))
   if str.contains(doc, "3.1.0") { Ok(()) }
   else { Err("missing openapi version") }
 }
 
 fn doc_has_info_title_and_version() -> Result[Unit, Str] {
   let r   := router.new()
-  let doc := jv.stringify(openapi.export_openapi(r,
-    openapi.make_info("My API", "2.0.0")))
+  let doc := openapi.export_openapi_str(r, openapi.make_info("My API", "2.0.0"))
   if str.contains(doc, "My API") and str.contains(doc, "2.0.0") { Ok(()) }
   else { Err(str.concat("info missing: ", doc)) }
 }
 
 fn same_path_different_methods_one_path_item() -> Result[Unit, Str] {
-  # GET and POST on /items should produce one path item with two
-  # method keys, not two separate path items.
   let r :=
     router.new()
       |> fn (r :: router.Router) -> router.Router {
@@ -140,9 +127,7 @@ fn same_path_different_methods_one_path_item() -> Result[Unit, Str] {
       |> fn (r :: router.Router) -> router.Router {
            router.route(r, "POST", "/items", noop_handler)
          }
-  let doc := jv.stringify(openapi.export_openapi(r, openapi.make_info("T", "1")))
-  # If deduplicated, "/items" appears exactly once as a path key.
-  # We check both method keys are present without "/items" doubled.
+  let doc := openapi.export_openapi_str(r, openapi.make_info("T", "1"))
   if str.contains(doc, "\"get\"") and str.contains(doc, "\"post\"")
   { Ok(()) }
   else { Err(str.concat("methods missing: ", doc)) }

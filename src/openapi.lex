@@ -18,8 +18,8 @@ import "std.map"  as map
 
 import "./router" as router
 
-import "lex-schema/json_value" as jv
-import "lex-schema/validator"  as v
+import "../../lex-data/src/json_value" as jv
+import "../../lex-data/src/validator"  as v
 
 # ---- API info record ---------------------------------------------
 

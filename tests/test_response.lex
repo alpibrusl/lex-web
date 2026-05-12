@@ -3,6 +3,7 @@
 import "std.list" as list
 import "std.str"  as str
 import "std.map"  as map
+import "std.int"  as int
 
 import "../src/response" as resp
 import "../src/testing"  as t
@@ -140,7 +141,7 @@ fn to_raw_preserves_body_and_status() -> Result[Unit, Str] {
   let r := resp.json("{\"ok\":true}")
   let raw := resp.to_raw(r)
   if raw.status == 200 and raw.body == "{\"ok\":true}" { Ok(()) }
-  else { Err(str.concat("unexpected raw: status=", str.concat(str.from_int(raw.status), str.concat(" body=", raw.body)))) }
+  else { Err(str.concat("unexpected raw: status=", str.concat(int.to_str(raw.status), str.concat(" body=", raw.body)))) }
 }
 
 # ---- Suite -------------------------------------------------------

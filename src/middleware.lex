@@ -85,9 +85,9 @@ fn run_post(
   mws      :: List[MiddlewareKind],
   c        :: ctx.Ctx,
   response :: resp.Response
-) -> [io] resp.Response {
+) -> [io, time] resp.Response {
   list.fold(mws, response,
-    fn (r :: resp.Response, kind :: MiddlewareKind) -> [io] resp.Response {
+    fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time] resp.Response {
       apply_post(kind, c, r)
     })
 }
@@ -96,7 +96,7 @@ fn apply_post(
   kind     :: MiddlewareKind,
   c        :: ctx.Ctx,
   response :: resp.Response
-) -> [io] resp.Response {
+) -> [io, time] resp.Response {
   match kind {
     MwCors(origins) => {
       let origin_hdr := str.join(origins, ", ")
@@ -134,7 +134,7 @@ fn apply_post(
 
 # Simple time-based ID. Not cryptographically random; good enough
 # for tracing logs. Replace with crypto.random_bytes once available.
-fn make_request_id() -> [io] Str {
+fn make_request_id() -> [time] Str {
   let now := time.now()
   str.concat("req-", int.to_str(now))
 }

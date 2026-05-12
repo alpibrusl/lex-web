@@ -4,20 +4,25 @@
 #   - lex-schema Validator for request body validation
 #   - handler_json() to attach the validator to a route
 #   - Path parameters via ctx.path_param()
+#   - Query params via ctx.query_param_or()
 #   - Response builders: json, created, not_found, problem
 #   - CORS + logger middleware via use_mw()
-#   - OpenAPI export at startup
+#   - OpenAPI export served at /openapi.json
 #   - Dispatch via a named wrapper (until lex-lang#354 lands)
 #
+# Validators and schema helpers are accessed through src/test_fixtures
+# so the module identity matches body.lex and router.lex (all three
+# import lex-data from the same relative-path chain).
+#
 # Run:
-#   lex run --allow-effects io,net examples/users_api.lex main
+#   lex run --allow-effects io,net,time \
+#           examples/users_api.lex main
 #
 # Try:
 #   curl -X POST http://localhost:8080/users \
 #        -H 'content-type: application/json' \
-#        -d '{"name":"Alice","email":"alice@example.com","age":30}'
-#
-#   curl http://localhost:8080/users/1
+#        -d '{"name":"Alice"}'
+#   curl http://localhost:8080/users/usr_001
 #   curl http://localhost:8080/openapi.json
 
 import "std.net"  as net
@@ -27,77 +32,52 @@ import "std.int"  as int
 import "std.list" as list
 import "std.map"  as map
 
-import "lex-web/ctx"      as ctx
-import "lex-web/response" as resp
-import "lex-web/router"   as router
-import "lex-web/body"     as body
-import "lex-web/middleware" as mw
-import "lex-web/openapi"  as openapi
-
-import "lex-schema/schema"     as s
-import "lex-schema/constraints" as c
-import "lex-schema/validator"  as v
-import "lex-schema/json_value" as jv
-
-# ---- Schema ------------------------------------------------------
-
-fn user_schema() -> s.ModelSchema {
-  {
-    title:       "User",
-    description: "A user account",
-    fields: [
-      s.required_str("name",  [c.StrNonEmpty, c.StrMaxLen(100)]),
-      s.required_str("email", [c.StrEmail]),
-      s.required_int("age",   [c.IntMin(0), c.IntMax(150)]),
-    ],
-  }
-}
-
-fn user_validator() -> v.Validator { v.make(user_schema()) }
+import "../src/ctx"           as ctx
+import "../src/response"      as resp
+import "../src/router"        as router
+import "../src/body"          as body
+import "../src/middleware"    as mw
+import "../src/openapi"       as openapi
+import "../src/test_fixtures" as tf
 
 # ---- Handlers ----------------------------------------------------
 
-# POST /users — create a user
+# POST /users — validate body and create a user.
+# body.require_json_body returns Err(Response) on bad input so
+# the match collapses to a single happy-path arm.
 fn create_user(c :: ctx.Ctx) -> resp.Response {
-  match body.require_json_body(c, user_validator()) {
+  match body.require_json_body(c, tf.name_validator()) {
     Err(problem_resp) => problem_resp,
-    Ok(user_json)     => {
-      # In a real app: db.insert(user_json) -> Ok(id)
-      let name := match jv.get_str(user_json, "name") {
-        Some(n) => n,
-        None    => "unknown",
-      }
-      let body_str := str.concat(
-        "{\"id\":\"usr_001\",\"name\":\"",
-        str.concat(name, "\"}"))
-      resp.created_json(body_str, "/users/usr_001")
-    },
+    Ok(_user_json)    =>
+      resp.created_json(
+        "{\"id\":\"usr_001\",\"name\":\"Alice\"}",
+        "/users/usr_001"),
   }
 }
 
-# GET /users/:id — fetch one user
+# GET /users/:id — fetch one user by path param.
 fn get_user(c :: ctx.Ctx) -> resp.Response {
   match ctx.path_param(c, "id") {
     None     => resp.bad_request("missing id"),
     Some(id) =>
-      # Simulate a lookup. Real app: db.find(id).
       if id == "usr_001" {
-        resp.json("{\"id\":\"usr_001\",\"name\":\"Alice\",\"email\":\"alice@example.com\",\"age\":30}")
+        resp.json("{\"id\":\"usr_001\",\"name\":\"Alice\"}")
       } else {
         resp.not_found()
       },
   }
 }
 
-# GET /users — list users
+# GET /users — list users, supporting ?page= query param.
 fn list_users(c :: ctx.Ctx) -> resp.Response {
   let page := ctx.query_param_or(c, "page", "1")
   resp.json(str.concat(
     "{\"page\":",
-    str.concat(page, ",\"items\":[{\"id\":\"usr_001\",\"name\":\"Alice\"}]}")))
+    str.concat(page,
+      ",\"items\":[{\"id\":\"usr_001\",\"name\":\"Alice\"}]}")))
 }
 
-# GET /openapi.json — serve the generated OpenAPI document
+# GET /openapi.json — serve the auto-generated OpenAPI document.
 fn get_openapi(c :: ctx.Ctx) -> resp.Response {
   let doc := openapi.export_openapi_str(
     app(),
@@ -113,7 +93,7 @@ fn app() -> router.Router {
          router.route(r, "GET", "/users", list_users)
        }
     |> fn (r :: router.Router) -> router.Router {
-         router.handler_json(r, "POST", "/users", user_validator(), create_user)
+         router.handler_json(r, "POST", "/users", tf.name_validator(), create_user)
        }
     |> fn (r :: router.Router) -> router.Router {
          router.route(r, "GET", "/users/:id", get_user)
@@ -131,20 +111,19 @@ fn app() -> router.Router {
 
 # ---- Entry point -------------------------------------------------
 #
-# Temporary dispatch wrapper required until lex-lang#354 lands
-# (net.serve currently takes a fn name string, not a closure).
-# Once #354 ships this collapses to: web.serve(8080, app())
+# net.serve currently takes a handler-name string (lex-lang#354).
+# The `handle` wrapper adapts our router to that interface.
+# Once #354 lands this collapses to: net.serve(8080, app())
 
-type RawRequest  = { body :: Str, method :: Str, path :: Str, query :: Str }
-type RawResponse = { body :: Str, status :: Int }
-
-fn handle(req :: RawRequest) -> [io] RawResponse {
+fn handle(req :: ctx.RawRequest) -> [io, time] resp.RawResponse {
   resp.to_raw(router.dispatch(app(), req))
 }
 
 fn main() -> [net, io] Nil {
-  let info := openapi.make_info("Users API", "0.1.0")
-  let doc  := openapi.export_openapi_str(app(), info)
-  let _    := io.print(str.concat("OpenAPI doc ready: ", str.concat(int.to_str(str.len(doc)), " bytes")))
+  let doc_size := str.len(openapi.export_openapi_str(
+    app(), openapi.make_info("Users API", "0.1.0")))
+  let _ := io.print(str.concat(
+    "OpenAPI doc ready: ",
+    str.concat(int.to_str(doc_size), " bytes")))
   net.serve(8080, "handle")
 }
