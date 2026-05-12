@@ -25,7 +25,7 @@ import "./ctx"        as ctx
 import "./response"   as resp
 import "./middleware" as mw
 
-import "lex-data/validator" as v
+import "lex-schema/validator" as v
 
 # ---- Types -------------------------------------------------------
 

@@ -4,9 +4,9 @@
 #
 # Effects: none.
 
-import "lex-data/schema"      as s
-import "lex-data/constraints" as c
-import "lex-data/validator"   as v
+import "lex-schema/schema"      as s
+import "lex-schema/constraints" as c
+import "lex-schema/validator"   as v
 
 # A two-field validator (name: string, qty: integer) used in
 # OpenAPI and body decoding tests.

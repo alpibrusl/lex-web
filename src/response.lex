@@ -10,8 +10,8 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 
-import "lex-data/error"   as e
-import "lex-data/problem" as prob
+import "lex-schema/error"   as e
+import "lex-schema/problem" as prob
 
 # Response value. Headers use lower-cased names per HTTP/2 convention.
 type Response = {

@@ -1,6 +1,6 @@
 # lex-web
 
-HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang), built on [lex-data](https://github.com/alpibrusl/lex-data) for request validation.
+HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang), built on [lex-schema](https://github.com/alpibrusl/lex-data) for request validation.
 
 ## Modules
 
@@ -81,7 +81,7 @@ Middlewares run in registration order. Pre-middleware (body_limit) can short-cir
 
 ## Request validation
 
-Attach a [lex-data](https://github.com/alpibrusl/lex-data) `Validator` to a route and lex-web validates the JSON body automatically:
+Attach a [lex-schema](https://github.com/alpibrusl/lex-data) `Validator` to a route and lex-web validates the JSON body automatically:
 
 ```lex
 import "../src/test_fixtures" as tf
@@ -153,7 +153,7 @@ Run with `lex test` (runs all `tests/test_*.lex` files automatically).
 
 ## Package setup (lex.toml)
 
-lex-web declares its lex-data dependency in `lex.toml`:
+lex-web declares its lex-schema dependency in `lex.toml`:
 
 ```toml
 [package]
@@ -161,13 +161,13 @@ name = "lex-web"
 version = "0.1.0"
 
 [dependencies]
-lex-data = { path = "../lex-data" }
+lex-schema = { path = "../lex-data" }
 ```
 
 Internal imports use the package name instead of relative paths:
 
 ```lex
-import "lex-data/validator" as v
+import "lex-schema/validator" as v
 ```
 
 For your own application, import lex-web modules relative to your file:
@@ -179,4 +179,4 @@ import "../src/router" as router
 
 ## Import paths
 
-Lex resolves imports by relative filesystem path. Import lex-web modules relative to your file. For lex-data types (`Validator`, `Json`, …) use `src/test_fixtures.lex` or import via lex.toml package names — both approaches are safe since lex-lang v0.9.0 (#358, path canonicalization).
+Lex resolves imports by relative filesystem path. Import lex-web modules relative to your file. For lex-schema types (`Validator`, `Json`, …) use `src/test_fixtures.lex` or import via lex.toml package names — both approaches are safe since lex-lang v0.9.0 (#358, path canonicalization).

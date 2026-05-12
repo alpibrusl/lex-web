@@ -3,4 +3,4 @@ name = "lex-web"
 version = "0.1.0"
 
 [dependencies]
-lex-data = { path = "../lex-data" }
+lex-schema = { path = "../lex-data" }
