@@ -66,6 +66,36 @@ fn main() -> [net, io, time] Nil {
 }
 ```
 
+## Persistence — pairs with lex-orm
+
+[lex-orm](https://github.com/alpibrusl/lex-orm) (a typed query builder +
+migration runner on top of `std.sql`) shares lex-schema with lex-web — the
+same `ModelSchema` value drives request validation **and** the persisted table
+shape. The end-to-end pairing demo lives in `examples/with_lex_orm.lex`:
+
+```lex
+fn item_schema() -> s.ModelSchema {
+  { title: "items", description: "",
+    fields: [
+      s.required_int("id",   []),
+      s.required_str("name", [StrNonEmpty, StrMaxLen(64)]),
+      s.required_int("qty",  [IntPositive]),
+    ] }
+}
+
+fn list_items(c :: ctx.Ctx) -> [sql] resp.Response {
+  let plan := q.paginate(q.select(item_repo()), 1, 20)
+  match q.run_select(plan, db) {
+    Err(_)    => resp.internal_error(),
+    Ok(items) => resp.json(serialize(items)),
+  }
+}
+```
+
+`run_select` carries the `[sql]` effect; the dispatcher propagates it through
+to `main`. lex-orm v0.1+ runs against real `std.sql` (Postgres + SQLite) since
+[#4](https://github.com/alpibrusl/lex-orm/pull/4) landed.
+
 ## FastAPI parity
 
 The end-to-end demo lives in `examples/fastapi_style.lex`. The pieces:
