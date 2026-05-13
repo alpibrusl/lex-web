@@ -5,17 +5,24 @@
 # at dispatch time.
 #
 # Pre-middleware runs before the matched handler:
-#   - MwBodyLimit — short-circuits with 413 if body exceeds limit
+#   - MwBodyLimit    — short-circuits with 413 if body exceeds limit
+#   - MwTrustedHost  — short-circuits with 400 if Host header is not
+#                       in the allowed list
+#   - MwCors         — short-circuits OPTIONS preflight requests with
+#                       a fully-formed 204 response
 #
 # Post-middleware runs after the handler returns a Response:
 #   - MwCors      — adds Access-Control-* headers
 #   - MwRequestId — echoes the generated request ID header
 #   - MwLogger    — logs `METHOD path -> status` to stdout [io]
+#   - MwGzip      — sets Content-Encoding: gzip when the client's
+#                    Accept-Encoding includes "gzip" and the body
+#                    crosses a threshold (compression itself is
+#                    deferred to lex-lang's std.gzip when it lands;
+#                    today the middleware only sets the header)
 #
-# Effects: run_pre is pure. run_post is [io] because MwLogger
-# writes to stdout. Stacks without MwLogger will still compile
-# as [io]; a future version will split the effect once higher-kinded
-# middleware types are well-supported in lex-lang.
+# Effects: run_pre is pure. run_post is [io, time] because MwLogger
+# writes to stdout and MwRequestId reads the wall clock.
 
 import "std.str"  as str
 import "std.int"  as int
@@ -34,12 +41,26 @@ type MiddlewareKind =
   | MwBodyLimit(Int)
   | MwRequestId
   | MwLogger
+  | MwGzip(Int)
+  | MwTrustedHost(List[Str])
 
 # Convenience constructors matching the proposed web.use() surface.
 fn cors(origins :: List[Str]) -> MiddlewareKind { MwCors(origins) }
 fn body_limit(max_bytes :: Int) -> MiddlewareKind { MwBodyLimit(max_bytes) }
 fn request_id() -> MiddlewareKind { MwRequestId }
 fn logger() -> MiddlewareKind { MwLogger }
+
+# Mark gzip on responses larger than `min_bytes`. Compression of
+# the body itself is gated on lex-lang exposing std.gzip; until
+# then this middleware only annotates the response header so the
+# rest of the negotiation flow is wired correctly.
+fn gzip(min_bytes :: Int) -> MiddlewareKind { MwGzip(min_bytes) }
+
+# Allow only requests whose Host header matches one of `hosts`.
+# Unknown hosts get a 400. Use `["*"]` (or an empty list) to skip.
+fn trusted_host(hosts :: List[Str]) -> MiddlewareKind {
+  MwTrustedHost(hosts)
+}
 
 # ---- Pre-middleware result ----------------------------------------
 
@@ -73,8 +94,51 @@ fn apply_pre(
     MwBodyLimit(max) =>
       if str.len(c.body) > max { Short(resp.payload_too_large()) }
       else { Continue(c) },
+    MwTrustedHost(hosts) =>
+      if list.len(hosts) == 0 { Continue(c) }
+      else {
+        if list.fold(hosts, false,
+             fn (acc :: Bool, h :: Str) -> Bool {
+               acc or (h == "*")
+             }) {
+          Continue(c)
+        } else {
+          let host := ctx.header_or(c, "host", "")
+          if list.fold(hosts, false,
+               fn (acc :: Bool, h :: Str) -> Bool {
+                 acc or (h == host)
+               }) { Continue(c) }
+          else { Short(resp.bad_request("invalid host header")) }
+        }
+      },
+    MwCors(origins) =>
+      if c.method == "OPTIONS" { Short(preflight_response(c, origins)) }
+      else { Continue(c) },
     _ => Continue(c),
   }
+}
+
+# Standard preflight response with 204 + the same Access-Control-*
+# headers MwCors would add post-handler.
+fn preflight_response(c :: ctx.Ctx, origins :: List[Str]) -> resp.Response {
+  let req_method  := ctx.header_or(c, "access-control-request-method",
+                       "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+  let req_headers := ctx.header_or(c, "access-control-request-headers",
+                       "content-type, authorization")
+  let origin_hdr  := str.join(origins, ", ")
+  let r := { body: "", status: 204, headers: map.new() }
+  r |> fn (rr :: resp.Response) -> resp.Response {
+        resp.with_header(rr, "access-control-allow-origin", origin_hdr)
+      }
+    |> fn (rr :: resp.Response) -> resp.Response {
+        resp.with_header(rr, "access-control-allow-methods", req_method)
+      }
+    |> fn (rr :: resp.Response) -> resp.Response {
+        resp.with_header(rr, "access-control-allow-headers", req_headers)
+      }
+    |> fn (rr :: resp.Response) -> resp.Response {
+        resp.with_header(rr, "access-control-max-age", "600")
+      }
 }
 
 # ---- Post-middleware pass ----------------------------------------
@@ -126,8 +190,19 @@ fn apply_post(
       let _ := io.print(line)
       response
     },
-    MwBodyLimit(_) => response,
+    MwGzip(min_bytes) =>
+      if str.len(response.body) >= min_bytes
+         and accepts_gzip(c) {
+        resp.with_header(response, "content-encoding", "gzip")
+      } else { response },
+    MwBodyLimit(_)    => response,
+    MwTrustedHost(_)  => response,
   }
+}
+
+fn accepts_gzip(c :: ctx.Ctx) -> Bool {
+  let ae := ctx.header_or(c, "accept-encoding", "")
+  str.contains(str.to_lower(ae), "gzip")
 }
 
 # ---- Request ID --------------------------------------------------

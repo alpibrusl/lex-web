@@ -1,9 +1,16 @@
 # lex-web — route table and dispatcher
 #
-# v0.1 uses a flat List[RouteRecord] scanned in registration order.
-# A trie keyed on path segments will replace this in v0.2 for
-# applications with large route counts; the public surface
-# (new / route / handler_json / use_mw / dispatch) is stable.
+# v0.2 keeps the v0.1 surface (new / route / handler_json / use_mw /
+# dispatch / dispatch_pure) and adds two FastAPI-style features:
+#
+#   1. RouteMeta — per-route tags, summary, description, default
+#      success status. Used by openapi.export_openapi to enrich
+#      operation objects; `attach_meta` is also called by sub_router
+#      when mounting a grouped router.
+#   2. The lookup itself is unchanged: a flat List[RouteRecord]
+#      scanned in registration order. A trie keyed on path segments
+#      will replace this in v0.3 for applications with large route
+#      counts; the public surface stays stable.
 #
 # Path pattern syntax:
 #   /users/:id        — `:name` binds one non-empty segment
@@ -13,8 +20,8 @@
 # registration order at every dispatch. See middleware.lex for
 # the available kinds.
 #
-# Effects: dispatch is [io] when the middleware stack includes
-# MwLogger. dispatch_pure is effect-free and intended for tests.
+# Effects: dispatch is [io, time] when the middleware stack
+# includes MwLogger / MwRequestId. dispatch_pure is effect-free.
 
 import "std.str"  as str
 import "std.list" as list
@@ -27,6 +34,27 @@ import "./middleware" as mw
 
 import "lex-schema/validator" as v
 
+# ---- Per-route metadata -----------------------------------------
+
+# Optional descriptors that ride along on each route. The router
+# never inspects them; they exist for openapi.export_openapi (and
+# any future introspection tool).
+#
+#   tags         — OpenAPI tags for grouping in Swagger UI
+#   summary      — short title shown in the operation list
+#   description  — long-form Markdown for the operation
+#   status       — default success status (0 = leave unset, use 200)
+type RouteMeta = {
+  tags        :: List[Str],
+  summary     :: Str,
+  description :: Str,
+  status      :: Int,
+}
+
+fn empty_meta() -> RouteMeta {
+  { tags: [], summary: "", description: "", status: 0 }
+}
+
 # ---- Types -------------------------------------------------------
 
 type RouteRecord = {
@@ -35,6 +63,7 @@ type RouteRecord = {
   segments  :: List[Str],
   handler   :: (ctx.Ctx) -> resp.Response,
   validator :: Option[v.Validator],
+  meta      :: RouteMeta,
 }
 
 type Router = {
@@ -52,7 +81,7 @@ fn route(
   pattern :: Str,
   handler :: (ctx.Ctx) -> resp.Response
 ) -> Router {
-  add_record(r, method, pattern, handler, None)
+  add_record(r, method, pattern, handler, None, empty_meta())
 }
 
 # Register a route with an attached lex-schema Validator.
@@ -65,7 +94,7 @@ fn handler_json(
   validator :: v.Validator,
   handler   :: (ctx.Ctx) -> resp.Response
 ) -> Router {
-  add_record(r, method, pattern, handler, Some(validator))
+  add_record(r, method, pattern, handler, Some(validator), empty_meta())
 }
 
 # Add a middleware to the stack. Middlewares run in registration
@@ -79,7 +108,8 @@ fn add_record(
   method    :: Str,
   pattern   :: Str,
   handler   :: (ctx.Ctx) -> resp.Response,
-  validator :: Option[v.Validator]
+  validator :: Option[v.Validator],
+  meta      :: RouteMeta
 ) -> Router {
   let rec := {
     method:    str.to_upper(method),
@@ -87,14 +117,64 @@ fn add_record(
     segments:  split_path(pattern),
     handler:   handler,
     validator: validator,
+    meta:      meta,
   }
   { routes: list.concat(r.routes, [rec]), middleware: r.middleware }
 }
 
+# ---- Metadata attachment -----------------------------------------
+
+# Replace the metadata of the route with the given (method, pattern).
+# Used by sub_router.mount; useful directly when annotating a route
+# after registration.
+#
+#   router.attach_meta(r, "POST", "/users",
+#     { tags: ["users"], summary: "Create user",
+#       description: "", status: 201 })
+fn attach_meta(
+  r       :: Router,
+  method  :: Str,
+  pattern :: Str,
+  meta    :: RouteMeta
+) -> Router {
+  let m := str.to_upper(method)
+  let updated := list.map(r.routes,
+    fn (rec :: RouteRecord) -> RouteRecord {
+      if rec.method == m and rec.pattern == pattern {
+        { method: rec.method, pattern: rec.pattern, segments: rec.segments,
+          handler: rec.handler, validator: rec.validator, meta: meta }
+      } else { rec }
+    })
+  { routes: updated, middleware: r.middleware }
+}
+
+# Convenience: register + attach in one call.
+fn route_with_meta(
+  r       :: Router,
+  method  :: Str,
+  pattern :: Str,
+  handler :: (ctx.Ctx) -> resp.Response,
+  meta    :: RouteMeta
+) -> Router {
+  add_record(r, method, pattern, handler, None, meta)
+}
+
+fn handler_json_with_meta(
+  r         :: Router,
+  method    :: Str,
+  pattern   :: Str,
+  validator :: v.Validator,
+  handler   :: (ctx.Ctx) -> resp.Response,
+  meta      :: RouteMeta
+) -> Router {
+  add_record(r, method, pattern, handler, Some(validator), meta)
+}
+
 # ---- Dispatch ----------------------------------------------------
 
-# Full dispatch: runs the middleware stack. Effect is [io] due to
-# MwLogger writing to stdout. Use dispatch_pure in tests.
+# Full dispatch: runs the middleware stack. Effect is [io, time] due
+# to MwLogger writing to stdout and MwRequestId reading the clock.
+# Use dispatch_pure in tests.
 fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time] resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
