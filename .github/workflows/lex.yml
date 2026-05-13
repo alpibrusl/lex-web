@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Mirrors the `lex.yml` scaffold that `lex init` produces, with two
+# tweaks for lex-web:
+#
+#   1. lex-web's lex.toml declares two path-resolved sibling
+#      dependencies (lex-schema, lex-orm). The job checks those
+#      repos out next to the lex-web checkout so `lex pkg install`
+#      can resolve them.
+#   2. lex is installed from the prebuilt release tarball rather
+#      than built from source — ~5s vs ~3min. Bump `LEX_VERSION`
+#      to upgrade.
+
+env:
+  LEX_VERSION: v0.9.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout lex-web
+        uses: actions/checkout@v4
+        with:
+          path: lex-web
+
+      - name: Checkout lex-schema (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: alpibrusl/lex-schema
+          ref: main
+          path: lex-schema
+
+      - name: Checkout lex-orm (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: alpibrusl/lex-orm
+          ref: main
+          path: lex-orm
+
+      - name: Install lex from release
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.lex-bin"
+          url="https://github.com/alpibrusl/lex-lang/releases/download/${LEX_VERSION}/lex-${LEX_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL "$url" | tar -xz -C "$HOME/.lex-bin" --strip-components=1
+          chmod +x "$HOME/.lex-bin/lex"
+          echo "$HOME/.lex-bin" >> "$GITHUB_PATH"
+
+      - name: Show lex version
+        run: lex --version
+
+      # `lex ci` runs the four-step pipeline:
+      #   lex pkg install → lex check --strict src/ → lex fmt --check → lex test
+      - name: Lex CI pipeline
+        working-directory: lex-web
+        run: lex ci
