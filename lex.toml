@@ -1,6 +1,9 @@
 [package]
-name = "lex-web"
-version = "0.1.0"
+name    = "lex-web"
+version = "0.2.0"
 
+# Requires lex-lang 0.9.0+ for native net.serve_fn closure handlers (#354),
+# the Response record (#355) and net.serve_ws_fn (#359). 0.9.1 is recommended
+# for the `lex test` runner, `lex fmt`, and Iter[T] streaming.
 [dependencies]
-lex-schema = { path = "../lex-data" }
+lex-schema = { path = "../lex-schema" }

@@ -1,6 +1,6 @@
 # lex-web — top-level facade
 #
-# Convenience re-import surface. Instead of importing six modules,
+# Convenience re-import surface. Instead of importing fifteen modules,
 # application code can import just "web" and access everything
 # through its sub-modules:
 #
@@ -21,18 +21,22 @@
 #   import "../src/ctx"    as ctx
 #   import "../src/router" as router
 #
-# This module is provided for the `lex-lang#354` era where a
-# single serve entry point will be:
-#
-#   web.serve(8080, app())
-#
 # Effects: none (the facade itself has no functions).
 
-import "./ctx"        as ctx
-import "./response"   as resp
-import "./router"     as router
-import "./middleware" as middleware
-import "./body"       as body
-import "./openapi"    as openapi
-import "./ws"         as ws
-import "./testing"    as testing
+import "./ctx"          as ctx
+import "./response"     as resp
+import "./router"       as router
+import "./middleware"   as middleware
+import "./body"         as body
+import "./openapi"      as openapi
+import "./ws"           as ws
+import "./testing"      as testing
+import "./status"       as status
+import "./params"       as params
+import "./depends"      as depends
+import "./sub_router"   as sub_router
+import "./lifespan"     as lifespan
+import "./background"   as background
+import "./docs"         as docs
+import "./static_files" as static_files
+import "./exceptions"   as exceptions

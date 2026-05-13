@@ -30,23 +30,23 @@ import "./response" as resp
 # ---- Request builders --------------------------------------------
 
 fn get(path :: Str) -> ctx.RawRequest {
-  { method: "GET", path: path, body: "", query: "" }
+  { method: "GET", path: path, body: "", query: "", headers: map.new() }
 }
 
 fn post(path :: Str, body :: Str) -> ctx.RawRequest {
-  { method: "POST", path: path, body: body, query: "" }
+  { method: "POST", path: path, body: body, query: "", headers: map.new() }
 }
 
 fn put(path :: Str, body :: Str) -> ctx.RawRequest {
-  { method: "PUT", path: path, body: body, query: "" }
+  { method: "PUT", path: path, body: body, query: "", headers: map.new() }
 }
 
 fn patch(path :: Str, body :: Str) -> ctx.RawRequest {
-  { method: "PATCH", path: path, body: body, query: "" }
+  { method: "PATCH", path: path, body: body, query: "", headers: map.new() }
 }
 
 fn delete(path :: Str) -> ctx.RawRequest {
-  { method: "DELETE", path: path, body: "", query: "" }
+  { method: "DELETE", path: path, body: "", query: "", headers: map.new() }
 }
 
 # Full constructor for cases that need query string or custom body.
@@ -56,11 +56,23 @@ fn request(
   body   :: Str,
   query  :: Str
 ) -> ctx.RawRequest {
-  { method: method, path: path, body: body, query: query }
+  { method: method, path: path, body: body, query: query, headers: map.new() }
 }
 
-# Add headers to a RawRequest (returns a Ctx directly, since
-# RawRequest has no headers field in the current net.serve spec).
+# Build a request with explicit headers.
+fn request_with_headers(
+  method :: Str,
+  path   :: Str,
+  body   :: Str,
+  query  :: Str,
+  hdrs   :: List[(Str, Str)]
+) -> ctx.RawRequest {
+  { method: method, path: path, body: body, query: query,
+    headers: map.from_list(hdrs) }
+}
+
+# Build a Ctx directly with the given headers (skips RawRequest).
+# Kept for tests written before request_with_headers existed.
 fn with_ctx_headers(
   req  :: ctx.RawRequest,
   hdrs :: List[(Str, Str)]
