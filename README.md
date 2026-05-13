@@ -36,6 +36,25 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 | `src/static_files.lex`  | In-memory bundle (`mount_map`) and filesystem (`mount_dir`) static serving |
 | `src/exceptions.lex`    | Typed-error registry (FastAPI's `exception_handler`) |
 
+## Example applications
+
+The `examples/` directory carries runnable apps that exercise the framework
+end-to-end. Each shows a different slice of the surface — pick the one
+closest to what you're building.
+
+| File | What it builds | Modules exercised |
+|------|----------------|-------------------|
+| `users_api.lex` | Smallest possible Users CRUD | `router`, `body`, `middleware`, `openapi` |
+| `fastapi_style.lex` | Items API touching every new v0.2 module | every FastAPI-parity module |
+| `with_lex_orm.lex` | Items API persisted via lex-orm (SQLite) | `+ lex-orm/connection`, `query`, `migrate` |
+| `url_shortener.lex` | POST /api/links + 302 redirects + click stats + Swagger UI | `sub_router`, `params`, `exceptions`, `background`, `docs`, `lifespan` |
+| `jsonrpc_ws.lex` | JSON-RPC 2.0 over WebSocket on `:9000`, browser console on `:8080` | `ws`, `router`, lex-schema `json_value` |
+| `webhook_receiver.lex` | Signed webhook ingestion with idempotency dedup + background processing | `depends.bind`, `exceptions`, `background`, `params.header_str`, RFC 7807 |
+
+Run any of them with `lex run --allow-effects io,net,time examples/<file> main`
+(some need additional effects — each file's header comment carries the exact
+invocation).
+
 ## Quick start
 
 ```lex
