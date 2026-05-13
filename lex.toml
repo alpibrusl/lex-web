@@ -7,3 +7,4 @@ version = "0.2.0"
 # for the `lex test` runner, `lex fmt`, and Iter[T] streaming.
 [dependencies]
 lex-schema = { path = "../lex-schema" }
+lex-orm    = { path = "../lex-orm" }
