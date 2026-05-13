@@ -50,6 +50,10 @@ closest to what you're building.
 | `url_shortener.lex` | POST /api/links + 302 redirects + click stats + Swagger UI | `sub_router`, `params`, `exceptions`, `background`, `docs`, `lifespan` |
 | `jsonrpc_ws.lex` | JSON-RPC 2.0 over WebSocket on `:9000`, browser console on `:8080` | `ws`, `router`, lex-schema `json_value` |
 | `webhook_receiver.lex` | Signed webhook ingestion with idempotency dedup + background processing | `depends.bind`, `exceptions`, `background`, `params.header_str`, RFC 7807 |
+| **End-to-end (web + schema + orm)** | | |
+| `todos_api.lex` | Task tracker with filter+search+pagination, status transitions, soft-delete | full stack; one schema drives validator + OpenAPI + Repo + CREATE TABLE |
+| `bank_transfers.lex` | Two-account ledger with atomic transfers | `q.transaction` for debit+credit+journal as one unit |
+| `bookmarks_api.lex` | M:N bookmarks/tags with join-result types via lex 0.9.1 record spreads | raw `sql.query` for the JOIN, `q.transaction` for tag resolve+link |
 
 Run any of them with `lex run --allow-effects io,net,time examples/<file> main`
 (some need additional effects — each file's header comment carries the exact
