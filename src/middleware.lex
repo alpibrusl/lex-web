@@ -13,23 +13,24 @@
 #
 # Post-middleware runs after the handler returns a Response:
 #   - MwCors      — adds Access-Control-* headers
-#   - MwRequestId — echoes the generated request ID header
-#   - MwLogger    — logs `METHOD path -> status` to stdout [io]
-#   - MwGzip      — sets Content-Encoding: gzip when the client's
-#                    Accept-Encoding includes "gzip" and the body
-#                    crosses a threshold (compression itself is
-#                    deferred to lex-lang's std.gzip when it lands;
-#                    today the middleware only sets the header)
+#   - MwRequestId — attaches a cryptographically random request ID
+#                    (x-request-id header). Requires [crypto] effect.
+#   - MwLogger    — logs `[timestamp] METHOD path -> status` [io, time]
+#   - MwGzip      — sets Content-Encoding: gzip when the client
+#                    accepts gzip and the body crosses a threshold
+#                    (actual compression deferred to std.gzip landing)
 #
-# Effects: run_pre is pure. run_post is [io, time] because MwLogger
-# writes to stdout and MwRequestId reads the wall clock.
+# Effects:
+#   run_pre               — pure
+#   run_post / apply_post — [io, time, crypto]
 
-import "std.str"  as str
-import "std.int"  as int
-import "std.list" as list
-import "std.map"  as map
-import "std.io"   as io
-import "std.time" as time
+import "std.str"    as str
+import "std.int"    as int
+import "std.list"   as list
+import "std.map"    as map
+import "std.io"     as io
+import "std.time"   as time
+import "std.crypto" as crypto
 
 import "./ctx"      as ctx
 import "./response" as resp
@@ -144,14 +145,14 @@ fn preflight_response(c :: ctx.Ctx, origins :: List[Str]) -> resp.Response {
 # ---- Post-middleware pass ----------------------------------------
 
 # Walk all middlewares in order and thread the Response through
-# each post-step. Logger emits to stdout.
+# each post-step. Logger emits to stdout with a timestamp.
 fn run_post(
   mws      :: List[MiddlewareKind],
   c        :: ctx.Ctx,
   response :: resp.Response
-) -> [io, time] resp.Response {
+) -> [io, time, crypto] resp.Response {
   list.fold(mws, response,
-    fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time] resp.Response {
+    fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto] resp.Response {
       apply_post(kind, c, r)
     })
 }
@@ -160,7 +161,7 @@ fn apply_post(
   kind     :: MiddlewareKind,
   c        :: ctx.Ctx,
   response :: resp.Response
-) -> [io, time] resp.Response {
+) -> [io, time, crypto] resp.Response {
   match kind {
     MwCors(origins) => {
       let origin_hdr := str.join(origins, ", ")
@@ -182,11 +183,14 @@ fn apply_post(
       resp.with_header(response, "x-request-id", rid)
     },
     MwLogger => {
-      let line := str.concat(c.method,
+      let ts   := time.now_str()
+      let line := str.concat(ts,
                    str.concat(" ",
-                     str.concat(c.path,
-                       str.concat(" -> ",
-                         int.to_str(response.status)))))
+                     str.concat(c.method,
+                       str.concat(" ",
+                         str.concat(c.path,
+                           str.concat(" -> ",
+                             int.to_str(response.status)))))))
       let _ := io.print(line)
       response
     },
@@ -207,9 +211,9 @@ fn accepts_gzip(c :: ctx.Ctx) -> Bool {
 
 # ---- Request ID --------------------------------------------------
 
-# Simple time-based ID. Not cryptographically random; good enough
-# for tracing logs. Replace with crypto.random_bytes once available.
-fn make_request_id() -> [time] Str {
-  let now := time.now()
-  str.concat("req-", int.to_str(now))
+# Cryptographically random 16-byte ID (32 hex chars). Unlike a
+# time-based ID this is collision-resistant and unpredictable,
+# making it safe to expose in logs or response headers.
+fn make_request_id() -> [crypto] Str {
+  crypto.random_str_hex(16)
 }
