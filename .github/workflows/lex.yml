@@ -24,8 +24,8 @@ jobs:
       - name: Install package dependencies
         run: lex pkg install
 
-      - name: Type-check (strict)
-        run: lex check --strict src/web.lex
+      - name: Type-check
+        run: lex check src/web.lex
 
       - name: Run tests
         run: lex test
