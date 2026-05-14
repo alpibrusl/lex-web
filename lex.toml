@@ -1,10 +1,12 @@
 [package]
 name    = "lex-web"
 version = "0.3.0"
+lex     = "0.9.3"
 
-# Requires lex-lang 0.9.2+ for std.crypto (blake2b, random_str_hex, AEAD,
-# KDF), std.time extensions (now_str, now_ms, mono_ns), streaming
-# ResponseBody, and iter.unfold. 0.9.1 is the minimum for the `lex test`
-# runner and `lex fmt`.
+# 0.9.3: net.dial_ws (outbound WS client), hyper 1.x server (5-8× throughput),
+#        permissive-policy fix unblocking [sql]/[random] in lex test.
+# 0.9.2: std.crypto (blake2b, random_str_hex, AEAD, KDF), std.time extensions
+#        (now_str, now_ms, mono_ns), streaming ResponseBody, iter.unfold.
 [dependencies]
-lex-schema = { path = "../lex-schema" }
+lex-schema = { git = "https://github.com/alpibrusl/lex-schema" }
+lex-crypto = { git = "https://github.com/alpibrusl/lex-crypto" }
