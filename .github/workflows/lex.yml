@@ -15,12 +15,18 @@ jobs:
 
       - name: Install Lex toolchain
         run: |
-          git clone --depth=1 --branch v0.9.3 https://github.com/alpibrusl/lex-lang /tmp/lex-lang
-          cd /tmp/lex-lang && cargo build --release -p lex-cli
-          echo "/tmp/lex-lang/target/release" >> $GITHUB_PATH
+          curl -fsSL https://github.com/alpibrusl/lex-lang/releases/download/v0.9.3/lex-v0.9.3-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C /tmp/
+          echo "/tmp/lex-v0.9.3-x86_64-unknown-linux-gnu" >> $GITHUB_PATH
 
-      - name: Install package dependencies
-        run: lex pkg install
+      # Pre-populate the lex package cache so `lex check` can resolve
+      # `import "lex-schema/..."` and `import "lex-crypto/..."` without
+      # running `lex pkg install`.
+      - name: Fetch package dependencies
+        run: |
+          mkdir -p ~/.lex/packages
+          git clone --depth=1 https://github.com/alpibrusl/lex-schema ~/.lex/packages/lex-schema
+          git clone --depth=1 https://github.com/alpibrusl/lex-crypto ~/.lex/packages/lex-crypto
 
       - name: Type-check
         run: lex check src/web.lex
