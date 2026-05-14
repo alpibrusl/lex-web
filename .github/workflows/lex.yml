@@ -1,0 +1,36 @@
+name: Lex CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout lex-web
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Lex toolchain (build from source)
+        run: |
+          git clone --depth=1 https://github.com/alpibrusl/lex-lang /tmp/lex-lang
+          cd /tmp/lex-lang
+          cargo build --release -p lex-cli
+          echo "/tmp/lex-lang/target/release" >> "$GITHUB_PATH"
+
+      - name: Verify lex version
+        run: lex --version
+
+      - name: Install package dependencies
+        run: lex pkg install
+
+      - name: Type-check (strict)
+        run: lex check --strict src/web.lex
+
+      - name: Run tests
+        run: lex test
