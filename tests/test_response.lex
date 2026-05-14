@@ -135,13 +135,12 @@ fn with_header_overwrites_existing() -> Result[Unit, Str] {
   t.assert_header(r3, "x-val", "new")
 }
 
-# ---- to_raw ------------------------------------------------------
+# ---- body and status direct access ------------------------------
 
-fn to_raw_preserves_body_and_status() -> Result[Unit, Str] {
+fn body_and_status_accessible() -> Result[Unit, Str] {
   let r := resp.json("{\"ok\":true}")
-  let raw := resp.to_raw(r)
-  if raw.status == 200 and raw.body == "{\"ok\":true}" { Ok(()) }
-  else { Err(str.concat("unexpected raw: status=", str.concat(int.to_str(raw.status), str.concat(" body=", raw.body)))) }
+  if r.status == 200 and r.body == "{\"ok\":true}" { Ok(()) }
+  else { Err(str.concat("unexpected: status=", str.concat(int.to_str(r.status), str.concat(" body=", r.body)))) }
 }
 
 # ---- Suite -------------------------------------------------------
@@ -164,12 +163,12 @@ fn suite() -> List[Result[Unit, Str]] {
     with_header_lowercases_key(),
     with_headers_sets_multiple(),
     with_header_overwrites_existing(),
-    to_raw_preserves_body_and_status(),
+    body_and_status_accessible(),
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
+fn run_all() -> () {
+  assert list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r { Ok(_) => n, Err(_) => n + 1 }
-  })
+  }) == 0
 }

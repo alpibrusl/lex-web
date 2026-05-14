@@ -17,7 +17,7 @@ fn match_not_found(e :: AppError) -> Option[resp.Response] {
     NotFound(what) =>
       Some(resp.json_status(404,
         str.concat("{\"error\":\"not found\",\"what\":\"",
-                   str.concat(what, "\"}")))),
+                   str.concat(what, "\"}"))))),
     _ => None,
   }
 }
@@ -27,7 +27,7 @@ fn match_conflict(e :: AppError) -> Option[resp.Response] {
     Conflict(what) =>
       Some(resp.json_status(409,
         str.concat("{\"error\":\"conflict\",\"what\":\"",
-                   str.concat(what, "\"}")))),
+                   str.concat(what, "\"}"))))),
     _ => None,
   }
 }
@@ -94,9 +94,9 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0,
+fn run_all() -> () {
+  assert list.fold(suite(), 0,
     fn (n :: Int, r :: Result[Unit, Str]) -> Int {
       match r { Ok(_) => n, Err(_) => n + 1 }
-    })
+    }) == 0
 }

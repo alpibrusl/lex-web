@@ -11,7 +11,7 @@ import "../src/testing" as t
 
 fn make_ctx(path :: Str, query :: Str) -> ctx.Ctx {
   ctx.from_request(
-    { method: "GET", path: path, body: "", query: query },
+    { method: "GET", path: path, body: "", query: query, headers: map.new() },
     map.new())
 }
 
@@ -20,7 +20,7 @@ fn make_ctx_with_headers(
   hdrs  :: List[(Str, Str)]
 ) -> ctx.Ctx {
   ctx.from_request_with_headers(
-    { method: "GET", path: path, body: "", query: "" },
+    { method: "GET", path: path, body: "", query: "", headers: map.new() },
     map.new(),
     map.from_list(hdrs))
 }
@@ -78,7 +78,7 @@ fn query_empty_string_body() -> Result[Unit, Str] {
 
 fn path_param_found() -> Result[Unit, Str] {
   let c := ctx.from_request(
-    { method: "GET", path: "/users/99", body: "", query: "" },
+    { method: "GET", path: "/users/99", body: "", query: "", headers: map.new() },
     map.from_list([("id", "99")]))
   match ctx.path_param(c, "id") {
     Some("99") => Ok(()),
@@ -88,7 +88,7 @@ fn path_param_found() -> Result[Unit, Str] {
 
 fn path_param_missing() -> Result[Unit, Str] {
   let c := ctx.from_request(
-    { method: "GET", path: "/users/99", body: "", query: "" },
+    { method: "GET", path: "/users/99", body: "", query: "", headers: map.new() },
     map.new())
   match ctx.path_param(c, "id") {
     None => Ok(()),
@@ -98,7 +98,7 @@ fn path_param_missing() -> Result[Unit, Str] {
 
 fn require_path_param_ok() -> Result[Unit, Str] {
   let c := ctx.from_request(
-    { method: "GET", path: "/x", body: "", query: "" },
+    { method: "GET", path: "/x", body: "", query: "", headers: map.new() },
     map.from_list([("slug", "hello")]))
   match ctx.require_path_param(c, "slug") {
     Ok("hello") => Ok(()),
@@ -109,7 +109,7 @@ fn require_path_param_ok() -> Result[Unit, Str] {
 
 fn require_path_param_err() -> Result[Unit, Str] {
   let c := ctx.from_request(
-    { method: "GET", path: "/x", body: "", query: "" },
+    { method: "GET", path: "/x", body: "", query: "", headers: map.new() },
     map.new())
   match ctx.require_path_param(c, "slug") {
     Err(_) => Ok(()),
@@ -209,8 +209,8 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
+fn run_all() -> () {
+  assert list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r { Ok(_) => n, Err(_) => n + 1 }
-  })
+  }) == 0
 }

@@ -42,8 +42,8 @@ fn test_hs256_token_has_three_parts() -> Bool {
   list.len(parts) == 3
 }
 
-fn run_all() -> Int {
-  (if test_issue_claims_decode_roundtrip()      { 0 } else { 1 }) +
-  (if test_wrong_secret_gives_different_token() { 0 } else { 1 }) +
-  (if test_hs256_token_has_three_parts()        { 0 } else { 1 })
+fn run_all() -> () {
+  assert test_issue_claims_decode_roundtrip()
+  assert test_wrong_secret_gives_different_token()
+  assert test_hs256_token_has_three_parts()
 }

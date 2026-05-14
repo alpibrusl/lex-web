@@ -113,7 +113,7 @@ fn test_bearer_present() -> Result[Unit, Str] {
     [("authorization", "Bearer abc123")])
   let c := ctx_for(req)
   match params.bearer(c) {
-    Ok(t)  => if t == "abc123" { Ok(()) } else { Err("wrong token") },
+    Ok(tok)  => if tok == "abc123" { Ok(()) } else { Err("wrong token") },
     Err(_) => Err("expected ok"),
   }
 }
@@ -145,9 +145,9 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0,
+fn run_all() -> () {
+  assert list.fold(suite(), 0,
     fn (n :: Int, r :: Result[Unit, Str]) -> Int {
       match r { Ok(_) => n, Err(_) => n + 1 }
-    })
+    }) == 0
 }

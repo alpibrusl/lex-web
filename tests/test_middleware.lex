@@ -18,7 +18,7 @@ import "../src/testing"    as t
 
 fn bare_ctx(path :: Str, body :: Str) -> ctx.Ctx {
   ctx.from_request(
-    { method: "GET", path: path, body: body, query: "" },
+    { method: "GET", path: path, body: body, query: "", headers: map.new() },
     map.new())
 }
 
@@ -130,8 +130,8 @@ fn suite() -> [io, time] List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> [io, time] Int {
-  list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
+fn run_all() -> [io, time] () {
+  assert list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r { Ok(_) => n, Err(_) => n + 1 }
-  })
+  }) == 0
 }
