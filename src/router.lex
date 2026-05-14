@@ -20,7 +20,7 @@
 # registration order at every dispatch. See middleware.lex for
 # the available kinds.
 #
-# Effects: dispatch is [io, time] when the middleware stack
+# Effects: dispatch is [io, time, crypto] when the middleware stack
 # includes MwLogger / MwRequestId. dispatch_pure is effect-free.
 
 import "std.str"  as str
@@ -172,10 +172,11 @@ fn handler_json_with_meta(
 
 # ---- Dispatch ----------------------------------------------------
 
-# Full dispatch: runs the middleware stack. Effect is [io, time] due
-# to MwLogger writing to stdout and MwRequestId reading the clock.
+# Full dispatch: runs the middleware stack. Effect is [io, time, crypto]
+# due to MwLogger writing to stdout, MwRequestId reading the clock,
+# and MwRequestId generating a cryptographically random ID.
 # Use dispatch_pure in tests.
-fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time] resp.Response {
+fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto] resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match find_match(r.routes, method, path_segs) {
@@ -209,7 +210,7 @@ fn run_with_middleware(
   mws    :: List[mw.MiddlewareKind],
   record :: RouteRecord,
   c      :: ctx.Ctx
-) -> [io, time] resp.Response {
+) -> [io, time, crypto] resp.Response {
   match mw.run_pre(mws, c) {
     Short(early) => mw.run_post(mws, c, early),
     Continue(c2) => {

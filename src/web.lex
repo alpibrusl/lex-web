@@ -40,3 +40,5 @@ import "./background"   as background
 import "./docs"         as docs
 import "./static_files" as static_files
 import "./exceptions"   as exceptions
+import "./crypto"       as crypto
+import "./stream"       as stream
