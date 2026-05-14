@@ -97,3 +97,20 @@ fn text_frame(msg :: WsMessage) -> Option[Str] {
 fn is_close(msg :: WsMessage) -> Bool {
   match msg { WsClose => true, _ => false }
 }
+
+# ---- Client-side (dial) -------------------------------------------
+
+# Open an outbound WebSocket connection to `url` (ws:// or wss://).
+# `subprotocol` is e.g. "ocpp1.6" or "" for none.
+# `on_open` fires once after the handshake; return a WsAction to send an
+# immediate frame (e.g. a BootNotification) or WsNoOp.
+# `on_message` is called for every inbound frame; return a WsAction reply.
+# Returns Err(Str) if the connection fails or drops with an error.
+fn dial[E](
+  url         :: Str,
+  subprotocol :: Str,
+  on_open     :: () -> [E] WsAction,
+  on_message  :: (WsMessage) -> [E] WsAction
+) -> [net, E] Result[Unit, Str] {
+  net.dial_ws(url, subprotocol, on_open, on_message)
+}
