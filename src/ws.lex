@@ -18,6 +18,7 @@
 
 import "std.str"  as str
 import "std.list" as list
+import "std.net"  as net
 
 # ---- Entry point ---------------------------------------------------
 
