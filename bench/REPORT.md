@@ -199,6 +199,87 @@ Raw output:
 - `bench/results/trials.tsv` — one row per trial (3 × 12 = 36 rows)
 - `bench/results/summary.tsv` — median / min / max per (server,endpoint)
 
+## Route-count scaling — the trie dispatcher
+
+The numbers above are at three routes. Realistic apps register
+dozens; the dispatcher's per-request cost scales with that count
+unless it's keyed on path structure. lex-web's original
+`find_match` did `list.fold` across the entire route list on every
+request — O(N × M) in (routes × path-depth). This branch replaces
+it with a compiled segment-keyed trie (`src/route_trie.lex`)
+built once at `app()` time, consulted in O(M) per request
+regardless of route count.
+
+### A/B at 3 and 20 routes
+
+Same wrk config (2 wrk threads, 64 conns, 15 s × 3 trials, 2-core
+`taskset` budget); only the lex-web dispatcher and the route count
+vary. lex-web variants are all *hoisted-`app()`* — the router is
+built once in `main` and captured by the handler closure, so
+neither variant pays trie-build cost per request.
+
+| Variant            | Dispatcher | Routes | /plaintext req/s | /users/:id req/s |
+| ------------------ | ---------- | -----: | ---------------: | ---------------: |
+| `lex-listfold-3`   | list.fold  |      3 |            6 586 |            5 580 |
+| `lex-trie-3`       | **trie**   |      3 |            6 584 |            5 872 |
+| `lex-listfold-20`  | list.fold  |     20 |              683 |              688 |
+| **`lex-trie-20`**  | **trie**   |     20 |        **2 287** |        **2 006** |
+| `fastapi-3`        | (Starlette)|      3 |           10 831 |            8 665 |
+| `fastapi-20`       | (Starlette)|     20 |            8 781 |            7 336 |
+
+Median across 3 trials per row. Raw: `bench/results/scaling.tsv`.
+
+### What this shows
+
+- **At 3 routes the trie is a wash.** Scanning three records in
+  `list.fold` is cheap; a trie lookup costs the same. The
+  dispatcher isn't the bottleneck at small route counts.
+- **At 20 routes the trie is a 3.3× win on plaintext (683 → 2 287)
+  and a 2.9× win on /users/:id (688 → 2 006).** The `list.fold`
+  dispatcher's throughput collapses because it walks all 20
+  preceding misses for every `/plaintext` or `/users/:id` hit;
+  the trie does one `map.get` and goes.
+- **The trie doesn't close the gap to FastAPI**, but it stops the
+  gap from widening. With `list.fold` at 20 routes lex-web sits at
+  8% of FastAPI; with the trie it sits at 26%. The remaining gap
+  is the same VM-overhead-per-allocation cost the headline section
+  describes — not routing logic.
+
+> **Caveat on absolute numbers.** This run was on a noisier host
+> than the headline 4-server matrix above; the 3-route trie row
+> (`6 584` plaintext) is ~80 % of the headline `8 013` from the
+> original run. The *ratios within this section* are reliable —
+> they're back-to-back A/B trials under identical conditions — but
+> don't compare these absolute numbers row-for-row to the matrix
+> table above.
+
+Hoisting `app()` out of the per-request `handle` closure was a
+secondary win measured separately: +23 % on `/users/:id` (5 120 →
+6 309 req/s) at 3 routes against the original
+`lex_web_bench_per_req.lex`. The matrix above and the trie A/B
+both use the hoisted bench file.
+
+### Why the trie still leaves a gap to FastAPI
+
+At 20 routes lex-web with the trie sits at 26 % of FastAPI. The
+remaining cost, in rough order of size:
+
+1. **`spawn_blocking` per request.** Every HTTP request in
+   lex-lang's `net.serve_fn` does hyper-async → `spawn_blocking`
+   → Lex VM (sync) → return. FastAPI/uvicorn keeps the request on
+   one async task, no blocking-pool hop. This is a lex-lang
+   change, not a lex-web one.
+2. **`split_path` and `str.to_upper` per request.** Both allocate
+   in the hot path. A method-enum lookup and a state-machine path
+   scan would eliminate them.
+3. **`resp.json` rebuilds its headers `Map[Str, Str]` per call.**
+   Pre-built singletons for common content-type/status combos
+   would skip the allocation.
+
+(1) is the biggest single lever and the natural follow-up to this
+branch. (2) and (3) are local lex-web work that can land
+independently.
+
 ## Notes on the lex-web framework patches this required
 
 To make `lex check` pass against lex-lang 0.9.3 the bench branch
@@ -223,3 +304,34 @@ The framework keeps its `Str` body internally; only the
 Whether lex-web should adopt `ResponseBody` natively (to support
 streaming responses) is a separate design question — out of scope
 for this benchmark.
+
+## Framework changes this branch landed
+
+Beyond the effect-row patches above, this branch landed one
+non-cosmetic framework change to enable the scaling section:
+
+- **`src/route_trie.lex`** — new module. Defines `TrieNode` (a
+  recursive ADT keyed on path segments), `compile(triples)` to
+  build the trie from registered routes, and `lookup(t, method,
+  segs)` for dispatch. Resolution order at each node is
+  literal > `:param` > `*wildcard`, matching the historical
+  `list.fold` semantics.
+- **`src/router.lex`** — `Router` gains a `trie :: rt.TrieNode`
+  field rebuilt by `add_record` (so registration is the only
+  place that pays trie-build cost; dispatch is `O(M)`). The
+  trie-based `dispatch` is the new default; the legacy
+  `list.fold` path is preserved as `dispatch_listfold` so the
+  scaling A/B in `bench/run-scaling.sh` can compare them.
+
+The trie's public surface is internal — no external API change.
+`router.new`, `router.route`, `router.dispatch`, etc. all behave
+the same; `dispatch_listfold` exists only for the benchmark and
+can be removed once the trie wins are accepted.
+
+### Scaling harness
+
+`bench/run-scaling.sh` drives six variants at the same
+2-core / 64-conn / 15s × 3-trial config: lex-web {list.fold,
+trie} × {3, 20 routes}, plus FastAPI {3, 20 routes} for context.
+Raw output at `bench/results/scaling.tsv` and per-trial
+`bench/results/scaling_*_t*.txt`.

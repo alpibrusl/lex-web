@@ -74,7 +74,7 @@ fn main() -> [net, io, time, crypto, random] Nil {
       query:   req.query,
       headers: req.headers,
     }
-    let resp_v := router.dispatch(r, raw)
+    let resp_v := router.dispatch_listfold(r, raw)
     { status: resp_v.status, body: BodyStr(resp_v.body), headers: resp_v.headers }
   }
   net.serve_fn(8080, h)

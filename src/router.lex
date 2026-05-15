@@ -27,9 +27,10 @@ import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
 
-import "./ctx"        as ctx
-import "./response"   as resp
-import "./middleware" as mw
+import "./ctx"         as ctx
+import "./response"    as resp
+import "./middleware"  as mw
+import "./route_trie"  as rt
 
 import "lex-schema/validator" as v
 
@@ -68,11 +69,25 @@ type RouteRecord = {
 type Router = {
   routes     :: List[RouteRecord],
   middleware :: List[mw.MiddlewareKind],
+  # Compiled trie kept in sync with `routes`. Rebuilt by add_record
+  # and attach_meta. dispatch consults this directly.
+  trie       :: rt.TrieNode,
 }
 
 # ---- Construction ------------------------------------------------
 
-fn new() -> Router { { routes: [], middleware: [] } }
+fn new() -> Router {
+  { routes: [], middleware: [], trie: rt.empty_node() }
+}
+
+# Rebuild the trie from a list of records. O(N) where N = route count;
+# only paid at route registration, not at dispatch.
+fn compile_trie(records :: List[RouteRecord]) -> rt.TrieNode {
+  rt.compile(list.map(records,
+    fn (rec :: RouteRecord) -> (Str, List[Str], (ctx.Ctx) -> resp.Response) {
+      (rec.method, rec.segments, rec.handler)
+    }))
+}
 
 fn route(
   r       :: Router,
@@ -99,7 +114,7 @@ fn handler_json(
 # Add a middleware to the stack. Middlewares run in registration
 # order, outermost first (like Express `app.use`).
 fn use_mw(r :: Router, kind :: mw.MiddlewareKind) -> Router {
-  { routes: r.routes, middleware: list.concat(r.middleware, [kind]) }
+  { routes: r.routes, middleware: list.concat(r.middleware, [kind]), trie: r.trie }
 }
 
 fn add_record(
@@ -118,7 +133,8 @@ fn add_record(
     validator: validator,
     meta:      meta,
   }
-  { routes: list.concat(r.routes, [rec]), middleware: r.middleware }
+  let new_routes := list.concat(r.routes, [rec])
+  { routes: new_routes, middleware: r.middleware, trie: compile_trie(new_routes) }
 }
 
 # ---- Metadata attachment -----------------------------------------
@@ -137,7 +153,8 @@ fn attach_meta(
           handler: rec.handler, validator: rec.validator, meta: meta }
       } else { rec }
     })
-  { routes: updated, middleware: r.middleware }
+  # attach_meta doesn't change routing — the trie stays valid.
+  { routes: updated, middleware: r.middleware, trie: r.trie }
 }
 
 fn route_with_meta(
@@ -166,6 +183,38 @@ fn handler_json_with_meta(
 fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random] resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
+  match rt.lookup(r.trie, method, path_segs) {
+    None          => resp.not_found(),
+    Some(matched) => {
+      let handler := match matched { (h, _) => h }
+      let params  := match matched { (_, p) => p }
+      run_with_middleware_h(
+        r.middleware, handler, ctx.from_request(req, params))
+    },
+  }
+}
+
+fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
+  let method    := str.to_upper(req.method)
+  let path_segs := split_path(req.path)
+  match rt.lookup(r.trie, method, path_segs) {
+    None          => resp.not_found(),
+    Some(matched) => {
+      let handler := match matched { (h, _) => h }
+      let params  := match matched { (_, p) => p }
+      handler(ctx.from_request(req, params))
+    },
+  }
+}
+
+# Legacy list.fold dispatcher kept alongside the trie-based `dispatch`
+# for the bench/servers/lex_web_bench_many_listfold.lex A/B variant.
+# Behaviourally identical; the only difference is route lookup cost
+# (O(N × M) here vs O(M) via the trie). Not used by sub_router /
+# openapi / the public README examples — those go through dispatch.
+fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random] resp.Response {
+  let method    := str.to_upper(req.method)
+  let path_segs := split_path(req.path)
   match find_match(r.routes, method, path_segs) {
     None          => resp.not_found(),
     Some(matched) => {
@@ -177,28 +226,27 @@ fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random] re
   }
 }
 
-fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
-  let method    := str.to_upper(req.method)
-  let path_segs := split_path(req.path)
-  match find_match(r.routes, method, path_segs) {
-    None          => resp.not_found(),
-    Some(matched) => {
-      let record := match matched { (rec, _) => rec }
-      let params := match matched { (_, p)   => p   }
-      record.handler(ctx.from_request(req, params))
-    },
-  }
-}
-
 fn run_with_middleware(
   mws    :: List[mw.MiddlewareKind],
   record :: RouteRecord,
   c      :: ctx.Ctx
 ) -> [io, time, crypto, random] resp.Response {
+  run_with_middleware_h(mws, record.handler, c)
+}
+
+# Trie-driven dispatch path: we only have the handler closure, not
+# the full RouteRecord. run_with_middleware_h is the workhorse;
+# run_with_middleware stays as a thin shim for any caller still
+# handing in a RouteRecord.
+fn run_with_middleware_h(
+  mws     :: List[mw.MiddlewareKind],
+  handler :: (ctx.Ctx) -> resp.Response,
+  c       :: ctx.Ctx
+) -> [io, time, crypto, random] resp.Response {
   match mw.run_pre(mws, c) {
     Short(early) => mw.run_post(mws, c, early),
     Continue(c2) => {
-      let raw_resp := record.handler(c2)
+      let raw_resp := handler(c2)
       mw.run_post(mws, c2, raw_resp)
     },
   }
