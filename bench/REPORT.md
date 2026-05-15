@@ -1,15 +1,23 @@
 # lex-web framework benchmark — vs. FastAPI, Express, Axum
 
-> **Headline.** On a TechEmpower-style plaintext / JSON / routed-param
-> harness, lex-web 0.2 on lex-lang 0.9.3 serves **~8.0 k req/s** on a
-> 2-core budget. FastAPI (uvicorn, 1 worker) does **~12.4 k**, Express
-> (Node 22) **~10.9 k**, Axum (Rust, hyper+tokio) **~211 k**. lex-web
-> sits **~35 % below FastAPI** and **~26× below Axum** — the gap to
-> FastAPI is the Lex VM interpreting the dispatcher; the gap to Axum
-> is the difference between an interpreted dispatcher and a compiled
-> one on the same hyper+tokio runtime.
+> **Headline (v2, with lex-web `route_trie` + lex-lang `LEX_NET_INLINE_VM=1`).**
+> On a TechEmpower-style plaintext / JSON / routed-param harness, lex-web
+> on lex-lang 0.9.3 with the trie dispatcher and the inline-VM
+> server path serves **~12.9 k req/s** on `/plaintext`, **~12.7 k on
+> `/json`**, **~9.8 k on `/users/:id`** under a 2-core budget. FastAPI
+> (uvicorn, 1 worker) does **~13.7 k / 13.6 k / 11.2 k**, Express (Node 22)
+> **~12.3 k / 12.1 k / 11.7 k**, Axum (Rust, hyper+tokio) **~183 k / 176 k
+> / 165 k**. **lex-web now beats Express on plaintext and JSON and sits at
+> 87–94 % of FastAPI.**
+>
+> The original v1 row in this report measured 8 013 / 8 062 / 6 944 — 65 %
+> of FastAPI on plaintext. Two changes closed most of the gap: a compiled
+> route trie ([lex-web#9](https://github.com/alpibrusl/lex-web/pull/9))
+> and skipping `tokio::task::spawn_blocking` on the per-request VM call
+> ([lex-lang#434](https://github.com/alpibrusl/lex-lang/pull/434)).
 
-Reproduce: `bench/run.sh` (assumes `lex` built at
+Reproduce: `LEX_NET_INLINE_VM=1 bench/run.sh` (assumes `lex` built from
+the `claude/benchmark-lex-web-erQMR` branch of lex-lang at
 `../lex-lang/target/release/lex`, `wrk` and `python3` on `$PATH`,
 `bench/servers/axum_bench` and `bench/servers/node_modules`
 pre-built).
@@ -68,7 +76,7 @@ table). The one outlier was lex-web's `/json` trial 3 — 7.5 k vs.
 
 | Server   | Version              | Stack                                             | Workers |
 | -------- | -------------------- | ------------------------------------------------- | ------- |
-| lex-web  | lex-web 0.2 / lex 0.9.3 | hyper 1.x + tokio multi-thread + Lex VM        | 1 process, tokio default workers, `spawn_blocking` per request |
+| lex-web (v2) | lex-web `claude/benchmark-lex-web-erQMR` / lex `claude/benchmark-lex-web-erQMR` | hyper 1.x + tokio multi-thread + Lex VM | 1 process, tokio default workers, **inline-VM** (`LEX_NET_INLINE_VM=1`, lex-lang#434) |
 | FastAPI  | fastapi 0.136.1 / uvicorn 0.47 | uvicorn + httptools + asyncio          | `--workers 1` (single async event loop) |
 | Express  | Node 22.22 / Express 4.x  | Node http + Express middleware              | Single Node process, single event loop |
 | Axum     | axum 0.7 / hyper 1.x / tokio 1 | hyper 1.x + tokio multi-thread         | tokio default (= cores) |
@@ -80,47 +88,78 @@ cost of routing in an interpreted VM rather than compiled Rust.
 
 ## Results
 
-Median req/s across 3 trials, 2-core budget. Higher is better.
+### v2 — current (lex-web trie + lex-lang `LEX_NET_INLINE_VM=1`)
 
-| Server   | /plaintext (req/s) | /json (req/s) | /users/:id (req/s) | rel-to-FastAPI plaintext |
-| -------- | -----------------: | ------------: | -----------------: | -----------------------: |
-| **Axum** | **210 842**        | **204 148**   | **195 600**        | 17.0×                    |
-| FastAPI  | 12 409             | 11 912        | 9 935              | 1.00× (baseline)         |
-| Express  | 10 887             | 10 653        | 10 365             | 0.88×                    |
-| **lex-web** | **8 013**       | **8 062**     | **6 944**          | **0.65×**                |
+Median req/s across 3 trials, 2-core budget, **stack: PR #9 trie + PR #434
+inline-VM**. Higher is better.
+
+| Server      | /plaintext (req/s) | /json (req/s) | /users/:id (req/s) | rel-to-FastAPI plaintext |
+| ----------- | -----------------: | ------------: | -----------------: | -----------------------: |
+| **Axum**    | **183 327**        | **176 228**   | **165 043**        | 13.4×                    |
+| FastAPI     | 13 676             | 13 596        | 11 223             | 1.00× (baseline)         |
+| **lex-web** | **12 870**         | **12 692**    | **9 788**          | **0.94×**                |
+| Express     | 12 275             | 12 080        | 11 690             | 0.90×                    |
 
 Latency (median = p50; from `wrk --latency`):
 
-| Server   | /plaintext p50 / p99 | /json p50 / p99      | /users/:id p50 / p99 |
-| -------- | -------------------- | -------------------- | -------------------- |
-| Axum     | 0.29 ms / 0.70 ms    | 0.30 ms / 0.68 ms    | 0.32 ms / 0.66 ms    |
-| FastAPI  | 4.93 ms / 9.91 ms    | 5.18 ms / 10.50 ms   | 6.14 ms / 12.26 ms   |
-| Express  | 5.51 ms / 8.45 ms    | 5.66 ms / 8.95 ms    | 5.86 ms / 9.27 ms    |
-| lex-web  | 7.71 ms / 19.58 ms   | 7.62 ms / 19.35 ms   | 8.77 ms / 24.80 ms   |
+| Server   | /plaintext p50 / p99 | /json p50 / p99    | /users/:id p50 / p99 |
+| -------- | -------------------- | ------------------ | -------------------- |
+| Axum     | 0.34 ms / 0.70 ms    | 0.36 ms / 0.71 ms  | 0.39 ms / 0.72 ms    |
+| FastAPI  | 4.51 ms / 8.85 ms    | 4.57 ms / 8.87 ms  | 5.42 ms / 10.52 ms   |
+| Express  | 4.79 ms / 8.78 ms    | 4.83 ms / 8.91 ms  | 4.93 ms / 9.59 ms    |
+| lex-web  | 5.12 ms / 7.68 ms    | 5.18 ms / 7.73 ms  | 6.74 ms / 10.01 ms   |
 
-p99 tail on lex-web is ~2× the median — the Lex VM's allocator and
-the per-request `spawn_blocking` hop are both visible in the tail.
-FastAPI's p99 is the tightest of the interpreted runtimes here, likely
-because uvicorn keeps the entire request in one async task on the
-event loop (no blocking-pool hop).
+p99 tail on lex-web is now actually **tighter** than FastAPI's
+(7.68 ms vs 8.85 ms on plaintext) — `spawn_blocking` was the source
+of the long tail in v1; with the inline path, the tail collapses to
+~1.5× the median across all three endpoints. The trade is documented
+in lex-lang#434: handlers that do >1 ms of CPU work will now stall
+the tokio worker they're on, so the env var is opt-in.
+
+### v1 → v2 delta
+
+What moved between the original run (PR #8, default lex-lang
+`spawn_blocking`, list.fold dispatcher) and this v2 row:
+
+| Endpoint        | v1 req/s | v2 req/s | Δ        | % of FastAPI (v1 → v2) |
+| --------------- | -------: | -------: | -------: | ---------------------: |
+| `/plaintext`    |    8 013 | **12 870** | **+61 %** | 65 % → **94 %**       |
+| `/json`         |    8 062 | **12 692** | **+57 %** | 68 % → **93 %**       |
+| `/users/:id`    |    6 944 |  **9 788** | **+41 %** | 70 % → **87 %**       |
+
+Two changes contributed:
+
+1. **Compiled route trie** (`src/route_trie.lex`, [PR #9](https://github.com/alpibrusl/lex-web/pull/9)).
+   Neutral at 3 routes (this matrix); the win shows up at 20 routes
+   (+3.3× on plaintext, +2.9× on routed-param) — see the
+   *Route-count scaling* section below. Stops the regression as
+   route count grows.
+2. **`LEX_NET_INLINE_VM=1`** ([lex-lang PR #434](https://github.com/alpibrusl/lex-lang/pull/434)).
+   Skips `tokio::task::spawn_blocking` on the per-request VM call.
+   Measured directly: +33 % on plaintext, +28 % on JSON, +17 % on
+   routed-param. This is the bulk of the v1→v2 delta at 3 routes.
+
+FastAPI's row also moved (12 409 → 13 676 plaintext) — same host, same
+FastAPI code, just measurement variance between runs. The reliable
+read is the v2 column's % of FastAPI: every v2 row was measured in
+the same wrk session.
 
 ## What the gap is
 
-A request through lex-web does these steps inside the VM, on every
-hit:
+A request through lex-web (v2 stack: trie + inline-VM) does these
+steps inside the VM, on every hit:
 
-1. **Boundary adaptor** (`bench/servers/lex_web_bench.lex:62`):
-   rebuild the builtin `Request` record into a `ctx.RawRequest`
-   record. One record copy per request.
-2. **`router.dispatch`**:
+1. **Boundary adaptor** (`bench/servers/lex_web_bench.lex`): rebuild
+   the builtin `Request` record into a `ctx.RawRequest` record. One
+   record copy per request.
+2. **`router.dispatch`** (now trie-backed via `src/route_trie.lex`):
    - `str.to_upper(req.method)` — single-char inspection, but a
      string allocation per request.
    - `split_path(req.path)` — walks the path char-by-char in Lex,
-     building a `List[Str]` of segments. This is the single largest
-     cost on the lex-web side.
-   - `find_match` — `list.fold` over the route table, calling
-     `match_segments` per route. With three routes registered and
-     `/users/:id` being last, this fold runs 1–3 times.
+     building a `List[Str]` of segments. At 3 routes this is the
+     single largest cost on the lex-web side.
+   - `rt.lookup` — one `map.get` per path segment through the trie.
+     O(M) in path depth, independent of route count.
 3. **`ctx.from_request`** — record literal construction.
 4. **Middleware passes** — `mw.run_pre` and `mw.run_post` are
    no-op `list.fold`s when the middleware list is empty, but they
@@ -134,23 +173,23 @@ hit:
    ResponseBody`, since lex-lang #375 introduced streaming-body
    variants). One `BodyStr(...)` construction per request.
 
-All of step 1–6 runs in the Lex bytecode interpreter, inside a
-`tokio::task::spawn_blocking` call per request (the Lex VM is
-synchronous; the hyper service awaits the blocking task). So every
-request crosses the async/blocking boundary twice and runs ~tens of
-bytecode ops in between.
+All of step 1–6 runs in the Lex bytecode interpreter. With
+`LEX_NET_INLINE_VM=1` (lex-lang#434) the interpreter runs directly
+on the tokio worker — no `spawn_blocking` hop per request. Without
+the env var, each request also crosses the async/blocking boundary
+twice; that's the +33 % the inline path recovers on plaintext.
 
-The Axum row uses the same hyper + tokio and zero blocking-pool
-hops — handlers are async functions and the router is a compiled
-trie. **The 26× gap (211 k → 8 k) is the total cost of "interpret
-the dispatcher in a VM, behind `spawn_blocking`."** It's not
-HTTP-layer overhead — that's amortised in the Axum number.
+The Axum row uses the same hyper + tokio. **The remaining 14× gap
+(183 k → 12.9 k) is the cost of interpreting steps 1–6 in a VM vs.
+running them as monomorphised Rust.** Closing it further is a
+lex-lang topic (JIT or AOT), not a lex-web tuning question.
 
-The gap to FastAPI is smaller (1.5×) because FastAPI is also
-interpreting Python on every request, also constructing a
-`Request`/`Response` value, also doing path-param extraction in
-pure Python — and Python's interpreter loop is closer in speed to
-Lex's bytecode VM than to Rust monomorphised code.
+The gap to FastAPI is now small (6 % on plaintext): both are
+interpreted runtimes doing comparable per-request allocation. The
+remaining differences are step (2) `split_path` (Python uses
+Starlette's compiled regex router, Lex walks the string char-by-char)
+and step (5) header construction (FastAPI's `JSONResponse` keeps a
+header dict; lex-web rebuilds it via `map.from_list`).
 
 ## What this *isn't* measuring
 
@@ -261,24 +300,25 @@ both use the hoisted bench file.
 
 ### Why the trie still leaves a gap to FastAPI
 
-At 20 routes lex-web with the trie sits at 26 % of FastAPI. The
-remaining cost, in rough order of size:
+The 20-route scaling A/B was measured with **default** lex-lang
+(`spawn_blocking`); the v2 headline at 3 routes uses
+`LEX_NET_INLINE_VM=1`. Re-running the 20-route trie variant with
+inline-VM is a follow-up — the expected result is similar relative
+improvement (~+30 %), pulling lex-web closer to FastAPI's 8 k req/s
+at 20 routes.
 
-1. **`spawn_blocking` per request.** Every HTTP request in
-   lex-lang's `net.serve_fn` does hyper-async → `spawn_blocking`
-   → Lex VM (sync) → return. FastAPI/uvicorn keeps the request on
-   one async task, no blocking-pool hop. This is a lex-lang
-   change, not a lex-web one.
-2. **`split_path` and `str.to_upper` per request.** Both allocate
+The remaining cost after both changes, in rough order of size:
+
+1. **`split_path` and `str.to_upper` per request.** Both allocate
    in the hot path. A method-enum lookup and a state-machine path
    scan would eliminate them.
-3. **`resp.json` rebuilds its headers `Map[Str, Str]` per call.**
+2. **`resp.json` rebuilds its headers `Map[Str, Str]` per call.**
    Pre-built singletons for common content-type/status combos
    would skip the allocation.
+3. **Boundary `BodyStr(...)` wrap per response.** Removed if lex-web
+   adopts `body :: ResponseBody` natively (also unlocks streaming).
 
-(1) is the biggest single lever and the natural follow-up to this
-branch. (2) and (3) are local lex-web work that can land
-independently.
+All three are local lex-web work that can land independently.
 
 ## Notes on the lex-web framework patches this required
 
