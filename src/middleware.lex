@@ -14,7 +14,7 @@
 # Post-middleware runs after the handler returns a Response:
 #   - MwCors      — adds Access-Control-* headers
 #   - MwRequestId — attaches a cryptographically random request ID
-#                    (x-request-id header). Requires [crypto] effect.
+#                    (x-request-id header). Requires [crypto, random] effect.
 #   - MwLogger    — logs `[timestamp] METHOD path -> status` [io, time]
 #   - MwGzip      — sets Content-Encoding: gzip when the client
 #                    accepts gzip and the body crosses a threshold
@@ -22,7 +22,7 @@
 #
 # Effects:
 #   run_pre               — pure
-#   run_post / apply_post — [io, time, crypto]
+#   run_post / apply_post — [io, time, crypto, random]
 
 import "std.str"    as str
 import "std.int"    as int
@@ -150,9 +150,9 @@ fn run_post(
   mws      :: List[MiddlewareKind],
   c        :: ctx.Ctx,
   response :: resp.Response
-) -> [io, time, crypto] resp.Response {
+) -> [io, time, crypto, random] resp.Response {
   list.fold(mws, response,
-    fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto] resp.Response {
+    fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto, random] resp.Response {
       apply_post(kind, c, r)
     })
 }
@@ -161,7 +161,7 @@ fn apply_post(
   kind     :: MiddlewareKind,
   c        :: ctx.Ctx,
   response :: resp.Response
-) -> [io, time, crypto] resp.Response {
+) -> [io, time, crypto, random] resp.Response {
   match kind {
     MwCors(origins) => {
       let origin_hdr := str.join(origins, ", ")
@@ -214,6 +214,6 @@ fn accepts_gzip(c :: ctx.Ctx) -> Bool {
 # Cryptographically random 16-byte ID (32 hex chars). Unlike a
 # time-based ID this is collision-resistant and unpredictable,
 # making it safe to expose in logs or response headers.
-fn make_request_id() -> [crypto] Str {
+fn make_request_id() -> [crypto, random] Str {
   crypto.random_str_hex(16)
 }
