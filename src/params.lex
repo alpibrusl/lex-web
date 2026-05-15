@@ -14,9 +14,8 @@
 #
 # Effects: none.
 
-import "std.str"  as str
-import "std.list" as list
-import "std.map"  as map
+import "std.str" as str
+import "std.map" as map
 
 import "./ctx"      as ctx
 import "./response" as resp
@@ -27,8 +26,6 @@ import "lex-schema/constraints" as c
 import "lex-schema/field"       as f
 
 # ---- Path parameters ---------------------------------------------
-
-# Path params are always required (the route wouldn't match otherwise).
 
 fn path_str(
   c :: ctx.Ctx,
@@ -79,9 +76,6 @@ fn path_float(
 }
 
 # ---- Query parameters --------------------------------------------
-
-# `default :: Option[T]` makes a param optional. When None and the
-# query string omits the key, the result is a 422 problem+json.
 
 fn query_str(
   c :: ctx.Ctx,
@@ -166,7 +160,6 @@ fn query_bool(
   }
 }
 
-# Optional query → Option[T]. Never errs on absent; only on bad value.
 fn query_optional_str(
   c :: ctx.Ctx,
   name   :: Str,
@@ -221,8 +214,6 @@ fn header_str(
   }
 }
 
-# Bearer token from `Authorization: Bearer <token>`. Missing or
-# malformed → 401 (matches FastAPI's HTTPBearer behaviour).
 fn bearer(c :: ctx.Ctx) -> Result[Str, resp.Response] {
   match ctx.bearer_token(c) {
     Some(t) =>

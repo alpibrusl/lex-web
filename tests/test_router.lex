@@ -82,7 +82,7 @@ fn param_does_not_match_empty_segment() -> Result[Unit, Str] {
 }
 
 fn method_mismatch_gives_404() -> Result[Unit, Str] {
-  # GET /users doesn’t exist — only POST /users is registered.
+  # GET /users doesn't exist — only POST /users is registered.
   let resp := router.dispatch_pure(simple_router(), t.get("/users"))
   t.assert_status(resp, 404)
 }
@@ -180,8 +180,8 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
+fn run_all() -> () {
+  assert list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r { Ok(_) => n, Err(_) => n + 1 }
-  })
+  }) == 0
 }

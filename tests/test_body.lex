@@ -15,14 +15,14 @@ import "../src/test_fixtures" as tf
 
 fn json_ctx(body_str :: Str) -> ctx.Ctx {
   ctx.from_request_with_headers(
-    { method: "POST", path: "/", body: body_str, query: "" },
+    { method: "POST", path: "/", body: body_str, query: "", headers: map.new() },
     map.new(),
     map.from_list([("content-type", "application/json")]))
 }
 
 fn form_ctx(body_str :: Str) -> ctx.Ctx {
   ctx.from_request_with_headers(
-    { method: "POST", path: "/", body: body_str, query: "" },
+    { method: "POST", path: "/", body: body_str, query: "", headers: map.new() },
     map.new(),
     map.from_list([
       ("content-type", "application/x-www-form-urlencoded")
@@ -144,8 +144,8 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
+fn run_all() -> () {
+  assert list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r { Ok(_) => n, Err(_) => n + 1 }
-  })
+  }) == 0
 }

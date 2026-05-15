@@ -83,7 +83,7 @@ fn test_meta_tags_attached() -> Result[Unit, Str] {
   let found := list.fold(routes, false,
     fn (acc :: Bool, rec :: router.RouteRecord) -> Bool {
       let has_users := list.fold(rec.meta.tags, false,
-        fn (a :: Bool, t :: Str) -> Bool { a or (t == "users") })
+        fn (a :: Bool, tag :: Str) -> Bool { a or (tag == "users") })
       acc or (rec.method == "GET" and rec.pattern == "/users" and has_users)
     })
   if found { Ok(()) } else { Err("tags missing") }
@@ -102,9 +102,9 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0,
+fn run_all() -> () {
+  assert list.fold(suite(), 0,
     fn (n :: Int, r :: Result[Unit, Str]) -> Int {
       match r { Ok(_) => n, Err(_) => n + 1 }
-    })
+    }) == 0
 }

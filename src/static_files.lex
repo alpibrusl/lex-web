@@ -17,10 +17,9 @@
 #   mount_map / serve_from_map — none
 #   mount_dir / serve_from_dir — [io]
 
-import "std.str"  as str
-import "std.list" as list
-import "std.map"  as map
-import "std.io"   as io
+import "std.str" as str
+import "std.map" as map
+import "std.io"  as io
 
 import "./ctx"      as ctx
 import "./response" as resp
@@ -28,11 +27,8 @@ import "./router"   as router
 
 # ---- In-memory bundle --------------------------------------------
 
-# Map prefix-relative paths (e.g. "css/site.css") to a Response body
-# string. Content-Type is inferred from the extension.
 type Bundle = Map[Str, Str]
 
-# Add a catch-all route under `prefix` serving from a Bundle.
 fn mount_map(
   r       :: router.Router,
   prefix  :: Str,
@@ -61,7 +57,6 @@ fn serve_from_map(c :: ctx.Ctx, bundle :: Bundle) -> resp.Response {
 
 # ---- Filesystem-backed -------------------------------------------
 
-# Add a catch-all route under `prefix` reading files from `dir`.
 fn mount_dir(
   r      :: router.Router,
   prefix :: Str,
@@ -92,7 +87,6 @@ fn serve_from_dir(c :: ctx.Ctx, dir :: Str) -> [io] resp.Response {
 
 # ---- Content-type inference --------------------------------------
 
-# Tiny extension → MIME map; falls back to application/octet-stream.
 fn content_type_for(path :: Str) -> Str {
   let lower := str.to_lower(path)
   if str.ends_with(lower, ".html") { "text/html; charset=utf-8" }
@@ -127,8 +121,6 @@ fn with_inferred_ct(body :: Str, path :: Str) -> resp.Response {
 
 # ---- Path-traversal guard ----------------------------------------
 
-# Reject anything containing `..` or starting with `/` — the latter
-# would jump out of the directory; the former is a classic traversal.
 fn is_unsafe_path(path :: Str) -> Bool {
   if str.is_empty(path) { true }
   else {

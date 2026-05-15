@@ -26,7 +26,6 @@
 import "std.str"  as str
 import "std.list" as list
 import "std.map"  as map
-import "std.io"   as io
 
 import "./ctx"        as ctx
 import "./response"   as resp
@@ -124,13 +123,6 @@ fn add_record(
 
 # ---- Metadata attachment -----------------------------------------
 
-# Replace the metadata of the route with the given (method, pattern).
-# Used by sub_router.mount; useful directly when annotating a route
-# after registration.
-#
-#   router.attach_meta(r, "POST", "/users",
-#     { tags: ["users"], summary: "Create user",
-#       description: "", status: 201 })
 fn attach_meta(
   r       :: Router,
   method  :: Str,
@@ -148,7 +140,6 @@ fn attach_meta(
   { routes: updated, middleware: r.middleware }
 }
 
-# Convenience: register + attach in one call.
 fn route_with_meta(
   r       :: Router,
   method  :: Str,
@@ -172,10 +163,6 @@ fn handler_json_with_meta(
 
 # ---- Dispatch ----------------------------------------------------
 
-# Full dispatch: runs the middleware stack. Effect is [io, time, crypto]
-# due to MwLogger writing to stdout, MwRequestId reading the clock,
-# and MwRequestId generating a cryptographically random ID.
-# Use dispatch_pure in tests.
 fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto] resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
@@ -190,8 +177,6 @@ fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto] resp.Respo
   }
 }
 
-# Pure dispatch: skips all middleware, runs the matched handler
-# directly. Intended for unit tests; not for production use.
 fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
   let method    := str.to_upper(req.method)
   let path_segs := split_path(req.path)
@@ -205,7 +190,6 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
   }
 }
 
-# Apply pre-middleware, run the handler, apply post-middleware.
 fn run_with_middleware(
   mws    :: List[mw.MiddlewareKind],
   record :: RouteRecord,
@@ -246,8 +230,6 @@ fn find_match(
     })
 }
 
-# Recursive segment-by-segment match returning extracted path
-# params on success or None on mismatch.
 fn match_segments(
   pattern   :: List[Str],
   actual    :: List[Str],
@@ -281,7 +263,6 @@ fn match_segments(
   }
 }
 
-# Split on "/" and drop empty strings from leading/trailing slashes.
 fn split_path(path :: Str) -> List[Str] {
   list.filter(str.split(path, "/"),
     fn (s :: Str) -> Bool { not str.is_empty(s) })

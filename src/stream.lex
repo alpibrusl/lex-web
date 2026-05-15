@@ -92,6 +92,6 @@ fn ndjson_stream(lines :: Iter[Str]) -> StreamResponse {
 #     if n >= 10 { None }
 #     else { Some((int.to_str(n), n + 1)) }
 #   })
-fn unfold(seed :: S, step :: (S) -> Option[(Str, S)]) -> Iter[Str] {
+fn unfold[S](seed :: S, step :: (S) -> Option[(Str, S)]) -> Iter[Str] {
   iter.unfold(seed, step)
 }

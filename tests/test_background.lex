@@ -41,8 +41,8 @@ fn test_add_tasks_bulk() -> Result[Unit, Str] {
 }
 
 fn test_task_name_preserved() -> Result[Unit, Str] {
-  let t := bg.task("welcome-email", noop)
-  if t.name == "welcome-email" { Ok(()) }
+  let tk := bg.task("welcome-email", noop)
+  if tk.name == "welcome-email" { Ok(()) }
   else { Err("task name lost") }
 }
 
@@ -56,9 +56,9 @@ fn suite() -> List[Result[Unit, Str]] {
   ]
 }
 
-fn run_all() -> Int {
-  list.fold(suite(), 0,
+fn run_all() -> () {
+  assert list.fold(suite(), 0,
     fn (n :: Int, r :: Result[Unit, Str]) -> Int {
       match r { Ok(_) => n, Err(_) => n + 1 }
-    })
+    }) == 0
 }
