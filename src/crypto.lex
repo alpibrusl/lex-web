@@ -16,16 +16,22 @@
 #   sign / verify / verify_webhook — none (pure)
 #   encrypt / decrypt — none (pure; nonce is supplied by caller)
 
-import "std.str"    as str
+import "std.str" as str
+
 import "std.crypto" as crypto
 
 # ---- Signed tokens -----------------------------------------------
-
-# Produce a `value.sig` token where sig = blake2b(secret || value).
+# Produce a `value.sig` token where sig = sha256(secret || value).
 # Use for signed cookies or CSRF tokens that can be verified without
 # a database lookup.
+#
+# Was previously `blake2b` over Str; lex-lang 0.9.4's std.crypto
+# tightened `blake2b` to `Bytes -> Bytes`, so we switched to
+# `sha256_str` (still Str-in, Str-out) to keep the public signature
+# of `sign` / `verify` stable. blake2b remains available via the
+# bytes-typed entry point for callers that want it.
 fn sign(secret :: Str, value :: Str) -> Str {
-  let sig := crypto.blake2b(str.concat(secret, value))
+  let sig := crypto.sha256_str(str.concat(secret, value))
   str.concat(value, str.concat(".", sig))
 }
 
@@ -34,65 +40,76 @@ fn sign(secret :: Str, value :: Str) -> Str {
 # error. Uses constant-time comparison to prevent timing attacks.
 fn verify(secret :: Str, token :: Str) -> Result[Str, Str] {
   match find_dot(token, str.len(token) - 1) {
-    None      => Err("invalid token format"),
+    None => Err("invalid token format"),
     Some(dot) => {
-      let value    := str.slice(token, 0, dot)
-      let sig      := str.slice(token, dot + 1, str.len(token))
-      let expected := crypto.blake2b(str.concat(secret, value))
-      if crypto.eq(sig, expected) { Ok(value) }
-      else { Err("bad signature") }
+      let value := str.slice(token, 0, dot)
+      let sig := str.slice(token, dot + 1, str.len(token))
+      let expected := crypto.sha256_str(str.concat(secret, value))
+      if crypto.eq_str(sig, expected) {
+        Ok(value)
+      } else {
+        Err("bad signature")
+      }
     },
   }
 }
 
 # ---- Nonce / random IDs ------------------------------------------
-
 # Generate a random hex string of `n` bytes (2n hex chars).
-fn random_id(n :: Int) -> [crypto] Str {
+# Effects: `random` — `crypto.random_str_hex` reseeds from the OS RNG.
+fn random_id(n :: Int) -> [crypto, random] Str {
   crypto.random_str_hex(n)
 }
 
 # 16-byte random nonce for AES-GCM / ChaCha20 (standard nonce length).
-fn random_nonce() -> [crypto] Str {
+fn random_nonce() -> [crypto, random] Str {
   crypto.random_str_hex(16)
 }
 
 # ---- Webhook signature -------------------------------------------
-
 # Verify an HMAC-style webhook signature.
 # Many providers (Stripe, GitHub) compute HMAC-SHA256 over the raw body
-# with a shared secret. This implementation uses blake2b as the MAC;
+# with a shared secret. This implementation uses sha256 as the MAC;
 # callers wrapping real providers should compare expected hex values
-# from the provider's docs against blake2b(secret || body).
+# from the provider's docs against sha256_str(secret || body).
+#
+# Was `blake2b` over Str; lex-lang 0.9.4's std.crypto tightened
+# `blake2b` to `Bytes -> Bytes`. `sha256_str` keeps the Str-in
+# signature and is just as fit for the constant-time-eq use case.
 fn verify_webhook(secret :: Str, body :: Str, sig :: Str) -> Bool {
-  let expected := crypto.blake2b(str.concat(secret, body))
-  crypto.eq(sig, expected)
+  let expected := crypto.sha256_str(str.concat(secret, body))
+  crypto.eq_str(sig, expected)
 }
 
 # ---- Symmetric encryption ----------------------------------------
-
-# Encrypt `plaintext` with AES-GCM. `key` must be a 32-byte hex string
-# (64 hex chars = 256-bit key). `nonce` must be a 16-byte hex string
-# (32 hex chars). Use `random_nonce()` to generate the nonce, then
-# store it alongside the ciphertext (it is not secret).
-fn encrypt(key :: Str, nonce :: Str, plaintext :: Str) -> Result[Str, Str] {
-  crypto.aes_gcm_encrypt(key, nonce, plaintext)
-}
-
-# Decrypt a ciphertext produced by `encrypt`. Returns Err if the key,
-# nonce, or ciphertext are wrong (authentication tag mismatch).
-fn decrypt(key :: Str, nonce :: Str, ciphertext :: Str) -> Result[Str, Str] {
-  crypto.aes_gcm_decrypt(key, nonce, ciphertext)
-}
-
+#
+# The 3-arg `encrypt(key, nonce, plaintext) -> Result[Str, Str]` and
+# matching `decrypt` wrappers that used to live here were thin
+# pass-throughs over `crypto.aes_gcm_encrypt` / `crypto.aes_gcm_decrypt`
+# from before lex-lang 0.9.2. The 0.9.2 AEAD API is materially
+# different: 4-arg `aes_gcm_seal(key, nonce, plaintext, aad)` returning
+# `AeadResult { ciphertext, tag }`, and 5-arg `aes_gcm_open` taking
+# `tag` separately and returning `Bytes` (not `Str`). Inputs and
+# outputs are `Bytes`, not `Str`.
+#
+# The previous wrappers had zero in-tree callers (grep -rn returned
+# nothing across src/ tests/ examples/ bench/), so we removed them
+# instead of writing a marshalling layer with no client. The
+# `crypto.aes_gcm_seal` / `crypto.aes_gcm_open` / `chacha20_poly1305_*`
+# primitives are still callable directly from std.crypto for any
+# caller that needs them.
 # ---- Helpers ---------------------------------------------------------
-
 # Scan from the right looking for the last '.' (used to split
 # value.signature tokens). Returns None if no dot found.
 fn find_dot(s :: Str, i :: Int) -> Option[Int] {
-  if i < 0 { None }
-  else {
-    if str.slice(s, i, i + 1) == "." { Some(i) }
-    else { find_dot(s, i - 1) }
+  if i < 0 {
+    None
+  } else {
+    if str.slice(s, i, i + 1) == "." {
+      Some(i)
+    } else {
+      find_dot(s, i - 1)
+    }
   }
 }
+

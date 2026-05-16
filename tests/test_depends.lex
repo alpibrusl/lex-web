@@ -93,7 +93,7 @@ fn test_bind_chains() -> Result[Unit, Str] {
 }
 
 fn test_map_passes_err() -> Result[Unit, Str] {
-  let r := depends.map(Err(resp.unauthorized("x")), fn (n :: Int) -> Int {
+  let r := depends.map_ok(Err(resp.unauthorized("x")), fn (n :: Int) -> Int {
     n + 1
   })
   match r {
