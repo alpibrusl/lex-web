@@ -23,6 +23,25 @@
 # valid continuation) falls back to `:param` / `*wildcard`.
 #
 # Effects: none. The trie is a pure value.
+#
+# ---- HandlerBody — pure / effectful handler shape -----------------
+#
+# Route handlers come in two shapes:
+#
+#   HPure  ::  (Ctx) -> Response                            — registered via router.route
+#   HEff   ::  (Ctx) -> [io, time, crypto, random, sql,
+#                        fs_read, fs_write, net] Response   — via router.route_effectful
+#
+# Lex's effect rows are invariant — a pure handler cannot widen
+# to an effectful function type — and effect-row variables on record
+# fields aren't a thing in 0.9.4, so the two shapes are kept in a
+# tagged-union here and the trie stores `HandlerBody` at terminal
+# nodes. `dispatch` matches the variant; `dispatch_pure` honours
+# only `HPure`. The wide effect set on `HEff` is intentionally
+# generous: narrow the handler *body*, not the type, per the lex
+# agent-guidelines.
+
+type HandlerBody = HPure((ctx.Ctx) -> resp.Response) | HEff((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response)
 
 import "std.str" as str
 
@@ -52,7 +71,7 @@ import "./response" as resp
 #   wildcard  — `(name, method -> handler-record)` for `*rest`. Once
 #               matched, the wildcard binds the rest of the path as
 #               one joined string; no children needed.
-type TrieNode = { handlers :: Map[Str, (ctx.Ctx) -> resp.Response], literal :: Map[Str, TrieNode], param :: Option[(Str, TrieNode)], wildcard :: Option[(Str, Map[Str, (ctx.Ctx) -> resp.Response])] }
+type TrieNode = { handlers :: Map[Str, HandlerBody], literal :: Map[Str, TrieNode], param :: Option[(Str, TrieNode)], wildcard :: Option[(Str, Map[Str, HandlerBody])] }
 
 fn empty_node() -> TrieNode {
   { handlers: map.new(), literal: map.new(), param: None, wildcard: None }
@@ -63,10 +82,10 @@ fn empty_node() -> TrieNode {
 # `segs` is the route pattern split on '/' (e.g. `/users/:id` ->
 # ["users", ":id"]). The handler is stored at the terminal node
 # under the method key.
-fn insert(t :: TrieNode, method :: Str, segs :: List[Str], handler :: (ctx.Ctx) -> resp.Response) -> TrieNode {
+fn insert(t :: TrieNode, method :: Str, segs :: List[Str], body :: HandlerBody) -> TrieNode {
   match list.head(segs) {
     None => {
-      { handlers: map.set(t.handlers, method, handler), literal: t.literal, param: t.param, wildcard: t.wildcard }
+      { handlers: map.set(t.handlers, method, body), literal: t.literal, param: t.param, wildcard: t.wildcard }
     },
     Some(seg) => {
       let rest := list.tail(segs)
@@ -78,14 +97,14 @@ fn insert(t :: TrieNode, method :: Str, segs :: List[Str], handler :: (ctx.Ctx) 
             (_, hs) => hs,
           },
         }
-        { handlers: t.handlers, literal: t.literal, param: t.param, wildcard: Some((name, map.set(cur_handlers, method, handler))) }
+        { handlers: t.handlers, literal: t.literal, param: t.param, wildcard: Some((name, map.set(cur_handlers, method, body))) }
       } else {
         if str.starts_with(seg, ":") {
           let name_new := str.slice(seg, 1, str.len(seg))
           let pair_next := match t.param {
-            None => (name_new, insert(empty_node(), method, rest, handler)),
+            None => (name_new, insert(empty_node(), method, rest, body)),
             Some(prev) => match prev {
-              (name_old, c) => (name_old, insert(c, method, rest, handler)),
+              (name_old, c) => (name_old, insert(c, method, rest, body)),
             },
           }
           { handlers: t.handlers, literal: t.literal, param: Some(pair_next), wildcard: t.wildcard }
@@ -94,36 +113,36 @@ fn insert(t :: TrieNode, method :: Str, segs :: List[Str], handler :: (ctx.Ctx) 
             None => empty_node(),
             Some(c) => c,
           }
-          { handlers: t.handlers, literal: map.set(t.literal, seg, insert(child, method, rest, handler)), param: t.param, wildcard: t.wildcard }
+          { handlers: t.handlers, literal: map.set(t.literal, seg, insert(child, method, rest, body)), param: t.param, wildcard: t.wildcard }
         }
       }
     },
   }
 }
 
-# Public: build the trie from a list of (method, segments, handler) triples.
-fn compile(triples :: List[(Str, List[Str], (ctx.Ctx) -> resp.Response)]) -> TrieNode {
-  list.fold(triples, empty_node(), fn (t :: TrieNode, triple :: (Str, List[Str], (ctx.Ctx) -> resp.Response)) -> TrieNode {
+# Public: build the trie from a list of (method, segments, body) triples.
+fn compile(triples :: List[(Str, List[Str], HandlerBody)]) -> TrieNode {
+  list.fold(triples, empty_node(), fn (t :: TrieNode, triple :: (Str, List[Str], HandlerBody)) -> TrieNode {
     match triple {
-      (method, segs, h) => insert(t, method, segs, h),
+      (method, segs, body) => insert(t, method, segs, body),
     }
   })
 }
 
-# Public: lookup a request path. Returns the matched handler + the
-# bound params, or None if no route matched.
+# Public: lookup a request path. Returns the matched handler body +
+# the bound params, or None if no route matched.
 #
 # Resolution order at each node: literal first (Map.get O(log n)),
 # then param (single edge), then wildcard (terminates).
-fn lookup(t :: TrieNode, method :: Str, segs :: List[Str]) -> Option[((ctx.Ctx) -> resp.Response, Map[Str, Str])] {
+fn lookup(t :: TrieNode, method :: Str, segs :: List[Str]) -> Option[(HandlerBody, Map[Str, Str])] {
   lookup_inner(t, method, segs, map.new())
 }
 
-fn lookup_inner(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> Option[((ctx.Ctx) -> resp.Response, Map[Str, Str])] {
+fn lookup_inner(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> Option[(HandlerBody, Map[Str, Str])] {
   match list.head(segs) {
     None => {
       match map.get(t.handlers, method) {
-        Some(h) => Some((h, params)),
+        Some(b) => Some((b, params)),
         None => None,
       }
     },
@@ -144,7 +163,7 @@ fn lookup_inner(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[S
 
 # Fallback chain: try the :param edge, then the *wildcard edge.
 # Pulled out of lookup_inner to keep the literal-match arm flat.
-fn try_param_then_wildcard(t :: TrieNode, method :: Str, seg :: Str, all_segs :: List[Str], rest :: List[Str], params :: Map[Str, Str]) -> Option[((ctx.Ctx) -> resp.Response, Map[Str, Str])] {
+fn try_param_then_wildcard(t :: TrieNode, method :: Str, seg :: Str, all_segs :: List[Str], rest :: List[Str], params :: Map[Str, Str]) -> Option[(HandlerBody, Map[Str, Str])] {
   match t.param {
     Some(pair_v) => {
       match pair_v {
@@ -161,7 +180,7 @@ fn try_param_then_wildcard(t :: TrieNode, method :: Str, seg :: Str, all_segs ::
   }
 }
 
-fn try_wildcard(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> Option[((ctx.Ctx) -> resp.Response, Map[Str, Str])] {
+fn try_wildcard(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> Option[(HandlerBody, Map[Str, Str])] {
   match t.wildcard {
     None => None,
     Some(pair_v) => {
@@ -169,9 +188,9 @@ fn try_wildcard(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[S
         (name, hmap) => {
           match map.get(hmap, method) {
             None => None,
-            Some(h) => {
+            Some(b) => {
               let bound := map.set(params, name, str.join(segs, "/"))
-              Some((h, bound))
+              Some((b, bound))
             },
           }
         },
