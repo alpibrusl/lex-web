@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pull the pre-built lex binary that matches the lex.toml pin
+      # (lex = "0.9.4"). Building from source on every PR would add
+      # 6-8 minutes for no benefit; the release tarball is the same
+      # binary tested upstream.
+      - name: Install Lex toolchain
+        run: |
+          LEX_VERSION="0.9.4"
+          curl -fsSL -o /tmp/lex.tgz \
+            "https://github.com/alpibrusl/lex-lang/releases/download/v${LEX_VERSION}/lex-v${LEX_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf /tmp/lex.tgz -C /tmp/
+          install -m 0755 "/tmp/lex-v${LEX_VERSION}-x86_64-unknown-linux-gnu/lex" /usr/local/bin/lex
+          lex --version
+
+      - name: Install package dependencies (lex-schema / lex-crypto / lex-orm)
+        run: lex pkg install
+
+      # Per-file check so a single failure doesn't mask the rest, and
+      # so the log shows exactly which file is red.
+      - name: Type-check src/
+        run: |
+          set -e
+          fail=0
+          for f in src/*.lex; do
+            if ! lex check "$f" >/dev/null 2>&1; then
+              echo "::error file=$f::lex check failed"
+              lex check "$f" 2>&1 | head -3
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Format check
+        run: lex fmt --check src/ tests/ bench/servers/
+
+      # `lex test` runs each tests/test_*.lex's `run_all` under the
+      # widest sane effect set — see the file-level shim comments for
+      # why every run_all panics on failure rather than returning Err.
+      - name: Test
+        run: lex test --allow-effects io,time,crypto,random,sql,fs_read,fs_write,net tests/

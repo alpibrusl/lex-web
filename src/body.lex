@@ -19,25 +19,26 @@
 # Effects: none.
 
 import "std.str" as str
+
 import "std.map" as map
 
-import "./ctx"      as ctx
+import "./ctx" as ctx
+
 import "./response" as resp
 
-import "lex-schema/validator"  as v
+import "lex-schema/validator" as v
+
 import "lex-schema/json_value" as jv
-import "lex-schema/error"      as e
-import "lex-schema/form"       as form
+
+import "lex-schema/error" as e
+
+import "lex-schema/form" as form
 
 # ---- JSON body ---------------------------------------------------
-
 # Parse + validate the request body against the Validator.
 # Outer parse errors (malformed JSON) carry code = "parse";
 # field-level errors carry the per-rule codes from lex-schema.
-fn json_body(
-  c         :: ctx.Ctx,
-  validator :: v.Validator
-) -> Result[jv.Json, e.Errors] {
+fn json_body(c :: ctx.Ctx, validator :: v.Validator) -> Result[jv.Json, e.Errors] {
   v.validate_str(validator, c.body)
 }
 
@@ -48,25 +49,19 @@ fn json_body(
 #     Err(r)    => r,
 #     Ok(user)  => handle_create(user),
 #   }
-fn require_json_body(
-  c         :: ctx.Ctx,
-  validator :: v.Validator
-) -> Result[jv.Json, resp.Response] {
+fn require_json_body(c :: ctx.Ctx, validator :: v.Validator) -> Result[jv.Json, resp.Response] {
   match v.validate_str(validator, c.body) {
-    Ok(j)   => Ok(j),
+    Ok(j) => Ok(j),
     Err(es) => Err(resp.problem(422, c.path, es)),
   }
 }
 
 # ---- Form body ---------------------------------------------------
-
 # Decode an application/x-www-form-urlencoded body.
 # Returns an Err if the Content-Type is not urlencoded or if the
 # body is multipart (multipart support is deferred, see
 # lex-schema/form.lex).
-fn form_body(
-  c :: ctx.Ctx
-) -> Result[Map[Str, Str], e.Errors] {
+fn form_body(c :: ctx.Ctx) -> Result[Map[Str, Str], e.Errors] {
   form.decode_body(c.body, ctx.content_type(c))
 }
 
@@ -77,16 +72,16 @@ fn form_body_raw(c :: ctx.Ctx) -> Map[Str, Str] {
 }
 
 # ---- Raw body ----------------------------------------------------
-
-fn raw_body(c :: ctx.Ctx) -> Str { c.body }
+fn raw_body(c :: ctx.Ctx) -> Str {
+  c.body
+}
 
 # ---- Content-Type helpers ----------------------------------------
-
 fn is_json(c :: ctx.Ctx) -> Bool {
   str.starts_with(ctx.content_type(c), "application/json")
 }
 
 fn is_form(c :: ctx.Ctx) -> Bool {
-  str.starts_with(ctx.content_type(c),
-    "application/x-www-form-urlencoded")
+  str.starts_with(ctx.content_type(c), "application/x-www-form-urlencoded")
 }
+

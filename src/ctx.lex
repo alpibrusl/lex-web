@@ -7,61 +7,31 @@
 #
 # Effects: none. Ctx is a pure value.
 
-import "std.str"  as str
+import "std.str" as str
+
 import "std.list" as list
-import "std.map"  as map
+
+import "std.map" as map
 
 # Mirrors the Request record that net.serve_fn passes to every handler.
 # Defined locally so this module has no std.net import dependency;
 # callers that already import std.net can use structural equivalence.
-type RawRequest = {
-  body    :: Str,
-  method  :: Str,
-  path    :: Str,
-  query   :: Str,
-  headers :: Map[Str, Str],
-}
+type RawRequest = { body :: Str, method :: Str, path :: Str, query :: Str, headers :: Map[Str, Str] }
 
 # Enriched context threaded through every handler and middleware.
-type Ctx = {
-  method      :: Str,
-  path        :: Str,
-  query       :: Str,
-  body        :: Str,
-  path_params :: Map[Str, Str],
-  headers     :: Map[Str, Str],
-}
+type Ctx = { method :: Str, path :: Str, query :: Str, body :: Str, path_params :: Map[Str, Str], headers :: Map[Str, Str] }
 
 # Build a Ctx from the raw request + the param bindings the
 # router extracted during segment matching.
 fn from_request(req :: RawRequest, params :: Map[Str, Str]) -> Ctx {
-  {
-    method:      req.method,
-    path:        req.path,
-    query:       req.query,
-    body:        req.body,
-    path_params: params,
-    headers:     req.headers,
-  }
+  { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: req.headers }
 }
 
-fn from_request_with_headers(
-  req     :: RawRequest,
-  params  :: Map[Str, Str],
-  hdrs    :: Map[Str, Str]
-) -> Ctx {
-  {
-    method:      req.method,
-    path:        req.path,
-    query:       req.query,
-    body:        req.body,
-    path_params: params,
-    headers:     hdrs,
-  }
+fn from_request_with_headers(req :: RawRequest, params :: Map[Str, Str], hdrs :: Map[Str, Str]) -> Ctx {
+  { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: hdrs }
 }
 
 # ---- Path-param accessors ----------------------------------------
-
 fn path_param(ctx :: Ctx, name :: Str) -> Option[Str] {
   map.get(ctx.path_params, name)
 }
@@ -69,20 +39,21 @@ fn path_param(ctx :: Ctx, name :: Str) -> Option[Str] {
 fn require_path_param(ctx :: Ctx, name :: Str) -> Result[Str, Str] {
   match map.get(ctx.path_params, name) {
     Some(v) => Ok(v),
-    None    => Err(str.concat("missing path param: ", name)),
+    None => Err(str.concat("missing path param: ", name)),
   }
 }
 
 # ---- Query-param accessors ---------------------------------------
-
 # Parses `?a=1&b=hello` on every call. For hot paths bind with
 # `let q := query_map(ctx)` to avoid repeated parsing.
 fn query_map(ctx :: Ctx) -> Map[Str, Str] {
   let raw := strip_leading_q(ctx.query)
-  if str.is_empty(raw) { map.new() }
-  else {
-    let pairs := list.map(str.split(raw, "&"),
-      fn (kv :: Str) -> (Str, Str) { split_eq_pair(kv) })
+  if str.is_empty(raw) {
+    map.new()
+  } else {
+    let pairs := list.map(str.split(raw, "&"), fn (kv :: Str) -> (Str, Str) {
+      split_eq_pair(kv)
+    })
     map.from_list(pairs)
   }
 }
@@ -94,12 +65,11 @@ fn query_param(ctx :: Ctx, name :: Str) -> Option[Str] {
 fn query_param_or(ctx :: Ctx, name :: Str, default :: Str) -> Str {
   match map.get(query_map(ctx), name) {
     Some(v) => v,
-    None    => default,
+    None => default,
   }
 }
 
 # ---- Header accessors --------------------------------------------
-
 # Expects lower-cased names; the runtime should lower-case incoming
 # headers at the net.serve boundary.
 fn header(ctx :: Ctx, name :: Str) -> Option[Str] {
@@ -109,7 +79,7 @@ fn header(ctx :: Ctx, name :: Str) -> Option[Str] {
 fn header_or(ctx :: Ctx, name :: Str, default :: Str) -> Str {
   match header(ctx, name) {
     Some(v) => v,
-    None    => default,
+    None => default,
   }
 }
 
@@ -120,18 +90,18 @@ fn content_type(ctx :: Ctx) -> Str {
 # Returns the token from `Authorization: Bearer <token>`.
 fn bearer_token(ctx :: Ctx) -> Option[Str] {
   match header(ctx, "authorization") {
-    None    => None,
+    None => None,
     Some(v) => str.strip_prefix(v, "Bearer "),
   }
 }
 
 # ---- Cookie accessors --------------------------------------------
-
 fn cookie_map(ctx :: Ctx) -> Map[Str, Str] {
   match header(ctx, "cookie") {
-    None    => map.new(),
-    Some(c) => map.from_list(list.map(str.split(c, "; "),
-      fn (kv :: Str) -> (Str, Str) { split_eq_pair(kv) }))
+    None => map.new(),
+    Some(c) => map.from_list(list.map(str.split(c, "; "), fn (kv :: Str) -> (Str, Str) {
+      split_eq_pair(kv)
+    })),
   }
 }
 
@@ -140,11 +110,10 @@ fn cookie(ctx :: Ctx, name :: Str) -> Option[Str] {
 }
 
 # ---- Internal helpers --------------------------------------------
-
 fn strip_leading_q(s :: Str) -> Str {
   match str.strip_prefix(s, "?") {
     Some(rest) => rest,
-    None       => s,
+    None => s,
   }
 }
 
@@ -152,16 +121,20 @@ fn strip_leading_q(s :: Str) -> Str {
 # binds to the empty string, matching URLSearchParams behaviour.
 fn split_eq_pair(kv :: Str) -> (Str, Str) {
   match find_char(kv, "=", 0) {
-    None    => (kv, ""),
-    Some(i) => (str.slice(kv, 0, i),
-                str.slice(kv, i + 1, str.len(kv))),
+    None => (kv, ""),
+    Some(i) => (str.slice(kv, 0, i), str.slice(kv, i + 1, str.len(kv))),
   }
 }
 
 fn find_char(s :: Str, c :: Str, i :: Int) -> Option[Int] {
-  if i >= str.len(s) { None }
-  else {
-    if str.slice(s, i, i + 1) == c { Some(i) }
-    else { find_char(s, c, i + 1) }
+  if i >= str.len(s) {
+    None
+  } else {
+    if str.slice(s, i, i + 1) == c {
+      Some(i)
+    } else {
+      find_char(s, c, i + 1)
+    }
   }
 }
+
