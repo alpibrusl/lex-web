@@ -40,64 +40,56 @@ import "./response" as resp
 # recognises it; None lets the next matcher try.
 #
 #   type Matcher[E] = (E) -> Option[resp.Response]
-
-type Registry[E] = {
-  matchers :: List[(E) -> Option[resp.Response]],
-  fallback :: (E) -> resp.Response,
-}
-
+#
+# Conceptually a registry has the shape
+#
+#   Registry[E] = { matchers :: List[Matcher[E]], fallback :: (E) -> Response }
+#
+# but lex 0.9.4 doesn't unify generic record literals against their
+# named alias — `{ matchers: [], fallback: ... }` does not coerce to
+# `Registry[E]`. We keep the same fields, inline-typed at every
+# signature site; callers continue to compose the same way (see the
+# usage example at the top of this file).
 # ---- Construction ------------------------------------------------
-
-fn new[E]() -> Registry[E] {
+fn new[E]() -> { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response } {
   { matchers: [], fallback: default_fallback }
 }
 
-fn with_fallback[E](
-  r        :: Registry[E],
-  fallback :: (E) -> resp.Response
-) -> Registry[E] {
+fn with_fallback[E](r :: { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response }, fallback :: (E) -> resp.Response) -> { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response } {
   { matchers: r.matchers, fallback: fallback }
 }
 
-fn add[E](
-  r       :: Registry[E],
-  matcher :: (E) -> Option[resp.Response]
-) -> Registry[E] {
+fn add[E](r :: { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response }, matcher :: (E) -> Option[resp.Response]) -> { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response } {
   { matchers: list.concat(r.matchers, [matcher]), fallback: r.fallback }
 }
 
 # ---- Resolution --------------------------------------------------
-
 # Walk the matchers in registration order; return the first hit, or
 # the registry's fallback for unknown errors.
-fn handle[E](r :: Registry[E], err :: E) -> resp.Response {
-  let attempt := list.fold(r.matchers, None,
-    fn (acc :: Option[resp.Response], m :: (E) -> Option[resp.Response]) -> Option[resp.Response] {
-      match acc {
-        Some(_) => acc,
-        None    => m(err),
-      }
-    })
+fn handle[E](r :: { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response }, err :: E) -> resp.Response {
+  let attempt := list.fold(r.matchers, None, fn (acc :: Option[resp.Response], m :: (E) -> Option[resp.Response]) -> Option[resp.Response] {
+    match acc {
+      Some(_) => acc,
+      None => m(err),
+    }
+  })
   match attempt {
     Some(resp_) => resp_,
-    None        => r.fallback(err),
+    None => r.fallback(err),
   }
 }
 
 # Convenience: turn a Result into a Response by handing the Err to
 # the registry. The Ok value is mapped through `to_response` (often
 # `resp.json` composed with stringification).
-fn handle_result[E, T](
-  r           :: Registry[E],
-  result      :: Result[T, E],
-  to_response :: (T) -> resp.Response
-) -> resp.Response {
+fn handle_result[E, T](r :: { matchers :: List[(E) -> Option[resp.Response]], fallback :: (E) -> resp.Response }, result :: Result[T, E], to_response :: (T) -> resp.Response) -> resp.Response {
   match result {
-    Ok(v)   => to_response(v),
-    Err(e)  => handle(r, e),
+    Ok(v) => to_response(v),
+    Err(e) => handle(r, e),
   }
 }
 
 fn default_fallback[E](_e :: E) -> resp.Response {
   resp.internal_error()
 }
+
