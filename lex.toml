@@ -10,3 +10,4 @@ lex     = "0.9.3"
 [dependencies]
 lex-schema = { git = "https://github.com/alpibrusl/lex-schema" }
 lex-crypto = { git = "https://github.com/alpibrusl/lex-crypto" }
+lex-orm    = { git = "https://github.com/alpibrusl/lex-orm" }
