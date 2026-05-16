@@ -210,7 +210,7 @@ fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write] Unit {
       match seed(db) {
         Err(_) => io.print("seed failed"),
         Ok(_) => {
-          let __lex_discard_1 := io.print("bench server on :8080")
+          let __lex_discard_1 := io.print("bench server on :8084")
           let __lex_discard_2 := io.print("  GET /plaintext  /json  /db  /queries?queries=N")
           let r := app(db)
           let handler := fn (req :: Request) -> [io, time, crypto, random, sql, fs_read, fs_write, net] Response {
@@ -218,7 +218,11 @@ fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write] Unit {
             let resp_v := router.dispatch(r, raw)
             { status: resp_v.status, body: BodyStr(resp_v.body), headers: resp_v.headers }
           }
-          net.serve_fn(8080, handler)
+          # 8084 distinguishes the DB-backed bench from the
+          # framework-floor bench on :8080 (lex_web_bench.lex), so
+          # bench/run.sh can run both in the same matrix without a
+          # port collision.
+          net.serve_fn(8084, handler)
         },
       }
     },

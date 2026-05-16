@@ -31,12 +31,32 @@ LEX_PORT=8080
 FASTAPI_PORT=8081
 EXPRESS_PORT=8082
 AXUM_PORT=8083
+LEX_DB_PORT=8084
 
+# Default endpoints exercised by every server in the framework-floor
+# matrix. The DB server (lex-web-db) substitutes its own list — see
+# `endpoints_for` below.
 ENDPOINTS=(
   "plaintext:/plaintext"
   "json:/json"
   "user_id:/users/usr_001"
 )
+
+# TFB DB rows: one round-trip on /db, twenty fan-out on /queries.
+# The 20-query count matches TFB's published "queries" row.
+ENDPOINTS_LEX_WEB_DB=(
+  "plaintext:/plaintext"
+  "json:/json"
+  "db:/db"
+  "queries:/queries?queries=20"
+)
+
+endpoints_for() {
+  case "$1" in
+    lex-web-db) printf '%s\n' "${ENDPOINTS_LEX_WEB_DB[@]}" ;;
+    *)          printf '%s\n' "${ENDPOINTS[@]}" ;;
+  esac
+}
 
 log() { printf '[bench] %s\n' "$*" >&2; }
 
@@ -60,6 +80,22 @@ start_lex_web() {
     > "$RESULTS/lex-web.stdout" 2> "$RESULTS/lex-web.stderr" &
   echo $! > "$RESULTS/lex-web.pid"
   wait_for "http://127.0.0.1:$LEX_PORT/plaintext"
+}
+
+# DB-backed variant: same dispatch surface, plus /db + /queries
+# routes that go through route_effectful. The server binds the same
+# 8080 by default; we rebind it here to LEX_DB_PORT so the two
+# lex-web variants can sit in the matrix without colliding.
+start_lex_web_db() {
+  if [[ ! -x "$LEX_BIN" ]]; then
+    log "skip lex-web-db: $LEX_BIN not built"; return 1
+  fi
+  $TASKSET "$LEX_BIN" run \
+    --allow-effects io,net,time,sql,fs_write,crypto,random,fs_read \
+    bench/servers/lex_web_bench_db.lex main \
+    > "$RESULTS/lex-web-db.stdout" 2> "$RESULTS/lex-web-db.stderr" &
+  echo $! > "$RESULTS/lex-web-db.pid"
+  wait_for "http://127.0.0.1:$LEX_DB_PORT/plaintext"
 }
 
 start_fastapi() {
@@ -128,7 +164,10 @@ bench_one() {
   for _ in $(seq 1 "$WARMUP"); do
     curl -sf "http://127.0.0.1:$port/plaintext" >/dev/null || true
   done
-  for entry in "${ENDPOINTS[@]}"; do
+  local endpoints
+  endpoints=$(endpoints_for "$server")
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
     local name="${entry%%:*}" path="${entry#*:}"
     for trial in $(seq 1 "$TRIALS"); do
       local out="$RESULTS/${server}_${name}_t${trial}.txt"
@@ -139,16 +178,17 @@ bench_one() {
       printf '%s\t%s\t%d\t%s\n' "$server" "$name" "$trial" "$row" \
         >> "$RESULTS/trials.tsv"
     done
-  done
+  done <<< "$endpoints"
 }
 
 run_server() {
   local key="$1"
   case "$key" in
-    lex-web)  start_lex_web  && bench_one lex-web  "$LEX_PORT"     ;;
-    fastapi)  start_fastapi  && bench_one fastapi  "$FASTAPI_PORT" ;;
-    express)  start_express  && bench_one express  "$EXPRESS_PORT" ;;
-    axum)     start_axum     && bench_one axum     "$AXUM_PORT"    ;;
+    lex-web)    start_lex_web    && bench_one lex-web    "$LEX_PORT"     ;;
+    lex-web-db) start_lex_web_db && bench_one lex-web-db "$LEX_DB_PORT"  ;;
+    fastapi)    start_fastapi    && bench_one fastapi    "$FASTAPI_PORT" ;;
+    express)    start_express    && bench_one express    "$EXPRESS_PORT" ;;
+    axum)       start_axum       && bench_one axum       "$AXUM_PORT"    ;;
     *) log "unknown server: $key"; return 1 ;;
   esac
   kill_pidfile "$RESULTS/$key.pid"
@@ -185,7 +225,7 @@ summarize() {
 
 main() {
   printf 'server\tendpoint\ttrial\treq_per_sec\tp50_ms\tp99_ms\tlatency_avg\n' > "$RESULTS/trials.tsv"
-  local servers=("lex-web" "fastapi" "express" "axum")
+  local servers=("lex-web" "lex-web-db" "fastapi" "express" "axum")
   if (($# > 0)); then servers=("$@"); fi
   for s in "${servers[@]}"; do
     run_server "$s" || log "server $s failed/skipped"
