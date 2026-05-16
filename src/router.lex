@@ -23,19 +23,23 @@
 # Effects: dispatch is [io, time, crypto, random] when the middleware stack
 # includes MwLogger / MwRequestId. dispatch_pure is effect-free.
 
-import "std.str"  as str
-import "std.list" as list
-import "std.map"  as map
+import "std.str" as str
 
-import "./ctx"         as ctx
-import "./response"    as resp
-import "./middleware"  as mw
-import "./route_trie"  as rt
+import "std.list" as list
+
+import "std.map" as map
+
+import "./ctx" as ctx
+
+import "./response" as resp
+
+import "./middleware" as mw
+
+import "./route_trie" as rt
 
 import "lex-schema/validator" as v
 
 # ---- Per-route metadata -----------------------------------------
-
 # Optional descriptors that ride along on each route. The router
 # never inspects them; they exist for openapi.export_openapi (and
 # any future introspection tool).
@@ -44,38 +48,18 @@ import "lex-schema/validator" as v
 #   summary      — short title shown in the operation list
 #   description  — long-form Markdown for the operation
 #   status       — default success status (0 = leave unset, use 200)
-type RouteMeta = {
-  tags        :: List[Str],
-  summary     :: Str,
-  description :: Str,
-  status      :: Int,
-}
+type RouteMeta = { tags :: List[Str], summary :: Str, description :: Str, status :: Int }
 
 fn empty_meta() -> RouteMeta {
   { tags: [], summary: "", description: "", status: 0 }
 }
 
 # ---- Types -------------------------------------------------------
+type RouteRecord = { method :: Str, pattern :: Str, segments :: List[Str], handler :: (ctx.Ctx) -> resp.Response, validator :: Option[v.Validator], meta :: RouteMeta }
 
-type RouteRecord = {
-  method    :: Str,
-  pattern   :: Str,
-  segments  :: List[Str],
-  handler   :: (ctx.Ctx) -> resp.Response,
-  validator :: Option[v.Validator],
-  meta      :: RouteMeta,
-}
-
-type Router = {
-  routes     :: List[RouteRecord],
-  middleware :: List[mw.MiddlewareKind],
-  # Compiled trie kept in sync with `routes`. Rebuilt by add_record
-  # and attach_meta. dispatch consults this directly.
-  trie       :: rt.TrieNode,
-}
+type Router = { routes :: List[RouteRecord], middleware :: List[mw.MiddlewareKind], trie :: rt.TrieNode }
 
 # ---- Construction ------------------------------------------------
-
 fn new() -> Router {
   { routes: [], middleware: [], trie: rt.empty_node() }
 }
@@ -83,31 +67,19 @@ fn new() -> Router {
 # Rebuild the trie from a list of records. O(N) where N = route count;
 # only paid at route registration, not at dispatch.
 fn compile_trie(records :: List[RouteRecord]) -> rt.TrieNode {
-  rt.compile(list.map(records,
-    fn (rec :: RouteRecord) -> (Str, List[Str], (ctx.Ctx) -> resp.Response) {
-      (rec.method, rec.segments, rec.handler)
-    }))
+  rt.compile(list.map(records, fn (rec :: RouteRecord) -> (Str, List[Str], (ctx.Ctx) -> resp.Response) {
+    (rec.method, rec.segments, rec.handler)
+  }))
 }
 
-fn route(
-  r       :: Router,
-  method  :: Str,
-  pattern :: Str,
-  handler :: (ctx.Ctx) -> resp.Response
-) -> Router {
+fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response) -> Router {
   add_record(r, method, pattern, handler, None, empty_meta())
 }
 
 # Register a route with an attached lex-schema Validator.
 # The validator is used at runtime by body.json_body() and at
 # startup by openapi.export_openapi() to emit request-body schemas.
-fn handler_json(
-  r         :: Router,
-  method    :: Str,
-  pattern   :: Str,
-  validator :: v.Validator,
-  handler   :: (ctx.Ctx) -> resp.Response
-) -> Router {
+fn handler_json(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> resp.Response) -> Router {
   add_record(r, method, pattern, handler, Some(validator), empty_meta())
 }
 
@@ -117,91 +89,63 @@ fn use_mw(r :: Router, kind :: mw.MiddlewareKind) -> Router {
   { routes: r.routes, middleware: list.concat(r.middleware, [kind]), trie: r.trie }
 }
 
-fn add_record(
-  r         :: Router,
-  method    :: Str,
-  pattern   :: Str,
-  handler   :: (ctx.Ctx) -> resp.Response,
-  validator :: Option[v.Validator],
-  meta      :: RouteMeta
-) -> Router {
-  let rec := {
-    method:    str.to_upper(method),
-    pattern:   pattern,
-    segments:  split_path(pattern),
-    handler:   handler,
-    validator: validator,
-    meta:      meta,
-  }
+fn add_record(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response, validator :: Option[v.Validator], meta :: RouteMeta) -> Router {
+  let rec := { method: str.to_upper(method), pattern: pattern, segments: split_path(pattern), handler: handler, validator: validator, meta: meta }
   let new_routes := list.concat(r.routes, [rec])
   { routes: new_routes, middleware: r.middleware, trie: compile_trie(new_routes) }
 }
 
 # ---- Metadata attachment -----------------------------------------
-
-fn attach_meta(
-  r       :: Router,
-  method  :: Str,
-  pattern :: Str,
-  meta    :: RouteMeta
-) -> Router {
+fn attach_meta(r :: Router, method :: Str, pattern :: Str, meta :: RouteMeta) -> Router {
   let m := str.to_upper(method)
-  let updated := list.map(r.routes,
-    fn (rec :: RouteRecord) -> RouteRecord {
-      if rec.method == m and rec.pattern == pattern {
-        { method: rec.method, pattern: rec.pattern, segments: rec.segments,
-          handler: rec.handler, validator: rec.validator, meta: meta }
-      } else { rec }
-    })
-  # attach_meta doesn't change routing — the trie stays valid.
+  let updated := list.map(r.routes, fn (rec :: RouteRecord) -> RouteRecord {
+    if rec.method == m and rec.pattern == pattern {
+      { method: rec.method, pattern: rec.pattern, segments: rec.segments, handler: rec.handler, validator: rec.validator, meta: meta }
+    } else {
+      rec
+    }
+  })
   { routes: updated, middleware: r.middleware, trie: r.trie }
 }
 
-fn route_with_meta(
-  r       :: Router,
-  method  :: Str,
-  pattern :: Str,
-  handler :: (ctx.Ctx) -> resp.Response,
-  meta    :: RouteMeta
-) -> Router {
+fn route_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, handler, None, meta)
 }
 
-fn handler_json_with_meta(
-  r         :: Router,
-  method    :: Str,
-  pattern   :: Str,
-  validator :: v.Validator,
-  handler   :: (ctx.Ctx) -> resp.Response,
-  meta      :: RouteMeta
-) -> Router {
+fn handler_json_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, handler, Some(validator), meta)
 }
 
 # ---- Dispatch ----------------------------------------------------
-
 fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random] resp.Response {
-  let method    := str.to_upper(req.method)
+  let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match rt.lookup(r.trie, method, path_segs) {
-    None          => resp.not_found(),
+    None => resp.not_found(),
     Some(matched) => {
-      let handler := match matched { (h, _) => h }
-      let params  := match matched { (_, p) => p }
-      run_with_middleware_h(
-        r.middleware, handler, ctx.from_request(req, params))
+      let handler := match matched {
+        (h, _) => h,
+      }
+      let params := match matched {
+        (_, p) => p,
+      }
+      run_with_middleware_h(r.middleware, handler, ctx.from_request(req, params))
     },
   }
 }
 
 fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
-  let method    := str.to_upper(req.method)
+  let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match rt.lookup(r.trie, method, path_segs) {
-    None          => resp.not_found(),
+    None => resp.not_found(),
     Some(matched) => {
-      let handler := match matched { (h, _) => h }
-      let params  := match matched { (_, p) => p }
+      let handler := match matched {
+        (h, _) => h,
+      }
+      let params := match matched {
+        (_, p) => p,
+      }
       handler(ctx.from_request(req, params))
     },
   }
@@ -213,24 +157,23 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
 # (O(N × M) here vs O(M) via the trie). Not used by sub_router /
 # openapi / the public README examples — those go through dispatch.
 fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random] resp.Response {
-  let method    := str.to_upper(req.method)
+  let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match find_match(r.routes, method, path_segs) {
-    None          => resp.not_found(),
+    None => resp.not_found(),
     Some(matched) => {
-      let record := match matched { (rec, _) => rec }
-      let params := match matched { (_, p)   => p   }
-      run_with_middleware(
-        r.middleware, record, ctx.from_request(req, params))
+      let record := match matched {
+        (rec, _) => rec,
+      }
+      let params := match matched {
+        (_, p) => p,
+      }
+      run_with_middleware(r.middleware, record, ctx.from_request(req, params))
     },
   }
 }
 
-fn run_with_middleware(
-  mws    :: List[mw.MiddlewareKind],
-  record :: RouteRecord,
-  c      :: ctx.Ctx
-) -> [io, time, crypto, random] resp.Response {
+fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c :: ctx.Ctx) -> [io, time, crypto, random] resp.Response {
   run_with_middleware_h(mws, record.handler, c)
 }
 
@@ -238,11 +181,7 @@ fn run_with_middleware(
 # the full RouteRecord. run_with_middleware_h is the workhorse;
 # run_with_middleware stays as a thin shim for any caller still
 # handing in a RouteRecord.
-fn run_with_middleware_h(
-  mws     :: List[mw.MiddlewareKind],
-  handler :: (ctx.Ctx) -> resp.Response,
-  c       :: ctx.Ctx
-) -> [io, time, crypto, random] resp.Response {
+fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], handler :: (ctx.Ctx) -> resp.Response, c :: ctx.Ctx) -> [io, time, crypto, random] resp.Response {
   match mw.run_pre(mws, c) {
     Short(early) => mw.run_post(mws, c, early),
     Continue(c2) => {
@@ -253,56 +192,49 @@ fn run_with_middleware_h(
 }
 
 # ---- Route matching ----------------------------------------------
-
-fn find_match(
-  routes    :: List[RouteRecord],
-  method    :: Str,
-  path_segs :: List[Str]
-) -> Option[(RouteRecord, Map[Str, Str])] {
-  list.fold(routes, None,
-    fn (
-      acc :: Option[(RouteRecord, Map[Str, Str])],
-      rec :: RouteRecord
-    ) -> Option[(RouteRecord, Map[Str, Str])] {
-      match acc {
-        Some(_) => acc,
-        None    =>
-          if rec.method != method { None }
-          else {
-            match match_segments(rec.segments, path_segs, map.new()) {
-              None         => None,
-              Some(params) => Some((rec, params)),
-            }
-          },
-      }
-    })
+fn find_match(routes :: List[RouteRecord], method :: Str, path_segs :: List[Str]) -> Option[(RouteRecord, Map[Str, Str])] {
+  list.fold(routes, None, fn (acc :: Option[(RouteRecord, Map[Str, Str])], rec :: RouteRecord) -> Option[(RouteRecord, Map[Str, Str])] {
+    match acc {
+      Some(_) => acc,
+      None => if rec.method != method {
+        None
+      } else {
+        match match_segments(rec.segments, path_segs, map.new()) {
+          None => None,
+          Some(params) => Some((rec, params)),
+        }
+      },
+    }
+  })
 }
 
-fn match_segments(
-  pattern   :: List[Str],
-  actual    :: List[Str],
-  params    :: Map[Str, Str]
-) -> Option[Map[Str, Str]] {
+fn match_segments(pattern :: List[Str], actual :: List[Str], params :: Map[Str, Str]) -> Option[Map[Str, Str]] {
   match list.head(pattern) {
-    None =>
-      if list.len(actual) == 0 { Some(params) } else { None },
+    None => if list.len(actual) == 0 {
+      Some(params)
+    } else {
+      None
+    },
     Some(p_seg) => {
       let rest_p := list.tail(pattern)
       if str.starts_with(p_seg, "*") {
-        let name     := str.slice(p_seg, 1, str.len(p_seg))
+        let name := str.slice(p_seg, 1, str.len(p_seg))
         let rest_str := str.join(actual, "/")
         Some(map.set(params, name, rest_str))
       } else {
         match list.head(actual) {
-          None        => None,
+          None => None,
           Some(a_seg) => {
             let rest_a := list.tail(actual)
             if str.starts_with(p_seg, ":") {
               let name := str.slice(p_seg, 1, str.len(p_seg))
               match_segments(rest_p, rest_a, map.set(params, name, a_seg))
             } else {
-              if p_seg == a_seg { match_segments(rest_p, rest_a, params) }
-              else { None }
+              if p_seg == a_seg {
+                match_segments(rest_p, rest_a, params)
+              } else {
+                None
+              }
             }
           },
         }
@@ -312,6 +244,8 @@ fn match_segments(
 }
 
 fn split_path(path :: Str) -> List[Str] {
-  list.filter(str.split(path, "/"),
-    fn (s :: Str) -> Bool { not str.is_empty(s) })
+  list.filter(str.split(path, "/"), fn (s :: Str) -> Bool {
+    not str.is_empty(s)
+  })
 }
+
