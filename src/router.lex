@@ -198,7 +198,7 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
       let c := ctx.from_request(req, params)
       match body {
         HPure(h) => h(c),
-        HEff(_) => resp.internal_error(),
+        HEff(_) => resp.with_ct(500, "lex-web: this route was registered via route_effectful and cannot be invoked from dispatch_pure. Use dispatch with --allow-effects, or restrict the route to a pure handler.", "text/plain"),
       }
     },
   }
