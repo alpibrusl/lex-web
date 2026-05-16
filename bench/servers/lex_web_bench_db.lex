@@ -218,10 +218,6 @@ fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write] Unit {
             let resp_v := router.dispatch(r, raw)
             { status: resp_v.status, body: BodyStr(resp_v.body), headers: resp_v.headers }
           }
-          # 8084 distinguishes the DB-backed bench from the
-          # framework-floor bench on :8080 (lex_web_bench.lex), so
-          # bench/run.sh can run both in the same matrix without a
-          # port collision.
           net.serve_fn(8084, handler)
         },
       }

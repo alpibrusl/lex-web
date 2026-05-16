@@ -33,19 +33,12 @@ import "std.list" as list
 
 import "./response" as resp
 
-type BackgroundTask = {
-  name :: Str,
-  run  :: () -> [io, time] Nil,
-}
+type BackgroundTask = { name :: Str, run :: () -> [io, time] Nil }
 
 # Response + queued tasks, returned by background-aware handlers.
-type Reply = {
-  response :: resp.Response,
-  tasks    :: List[BackgroundTask],
-}
+type Reply = { response :: resp.Response, tasks :: List[BackgroundTask] }
 
 # ---- Construction ------------------------------------------------
-
 fn task(name :: Str, fn_body :: () -> [io, time] Nil) -> BackgroundTask {
   { name: name, run: fn_body }
 }
@@ -69,17 +62,22 @@ fn add_tasks(reply :: Reply, ts :: List[BackgroundTask]) -> Reply {
 }
 
 # ---- Execution ---------------------------------------------------
-
 # Run a single task. Used by run_all; exposed for callers that want
 # to drive tasks from a thread pool / dedicated runtime.
-fn run_one(t :: BackgroundTask) -> [io, time] Nil { t.run() }
+fn run_one(t :: BackgroundTask) -> [io, time] Nil {
+  t.run()
+}
 
 # Run every queued task in registration order. Failures propagate
 # (the runtime decides whether to abort the loop).
 fn run_all(tasks :: List[BackgroundTask]) -> [io, time] Nil {
-  list.fold(tasks, (),
-    fn (_acc :: Nil, t :: BackgroundTask) -> [io, time] Nil { t.run() })
+  list.fold(tasks, (), fn (_acc :: Nil, t :: BackgroundTask) -> [io, time] Nil {
+    t.run()
+  })
 }
 
 # Number of pending tasks — useful in tests and metrics.
-fn pending(reply :: Reply) -> Int { list.len(reply.tasks) }
+fn pending(reply :: Reply) -> Int {
+  list.len(reply.tasks)
+}
+
