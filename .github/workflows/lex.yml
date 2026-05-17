@@ -50,4 +50,4 @@ jobs:
       # widest sane effect set — see the file-level shim comments for
       # why every run_all panics on failure rather than returning Err.
       - name: Test
-        run: lex test --allow-effects io,time,crypto,random,sql,fs_read,fs_write,net tests/
+        run: lex test --allow-effects io,time,crypto,random,sql,fs_read,fs_write,net,concurrent tests/
