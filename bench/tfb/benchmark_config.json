@@ -1,0 +1,29 @@
+{
+  "framework": "lex-web",
+  "tests": [
+    {
+      "default": {
+        "plaintext_url": "/plaintext",
+        "json_url": "/json",
+        "db_url": "/db",
+        "query_url": "/queries?queries=",
+        "update_url": "/updates?queries=",
+        "port": 8080,
+        "approach": "Realistic",
+        "classification": "Fullstack",
+        "database": "Postgres",
+        "framework": "lex-web",
+        "language": "Lex",
+        "flavor": "None",
+        "orm": "Raw",
+        "platform": "lex-lang",
+        "webserver": "hyper",
+        "os": "Linux",
+        "database_os": "Linux",
+        "display_name": "lex-web",
+        "notes": "lex-web on lex-lang 0.9.5, route trie dispatcher, hyper+tokio server. /plaintext + /json are pure handlers; /db, /queries, /updates use the effectful-handler path (route_effectful).",
+        "versus": "fastapi"
+      }
+    }
+  ]
+}
