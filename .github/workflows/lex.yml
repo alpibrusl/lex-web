@@ -13,12 +13,12 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pull the pre-built lex binary that matches the lex.toml pin
-      # (lex = "0.9.4"). Building from source on every PR would add
+      # (lex = "0.9.5"). Building from source on every PR would add
       # 6-8 minutes for no benefit; the release tarball is the same
       # binary tested upstream.
       - name: Install Lex toolchain
         run: |
-          LEX_VERSION="0.9.4"
+          LEX_VERSION="0.9.5"
           curl -fsSL -o /tmp/lex.tgz \
             "https://github.com/alpibrusl/lex-lang/releases/download/v${LEX_VERSION}/lex-v${LEX_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
           tar -xzf /tmp/lex.tgz -C /tmp/

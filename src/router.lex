@@ -11,12 +11,14 @@
 #
 #   route_effectful / handler_json_effectful
 #     accept a (Ctx) -> [io, time, crypto, random, sql, fs_read,
-#     fs_write, net] Response handler. Use these when the handler
-#     needs to query a database, read a file, call out, or otherwise
-#     do anything beyond consuming the Ctx. The effect row is fixed-
-#     and-wide because Lex 0.9.4 doesn't support effect-row variables
-#     on closures stored in record fields; narrow the body, not the
-#     declaration.
+#     fs_write, net, concurrent] Response handler. Use these when
+#     the handler needs to query a database, read a file, call out,
+#     drive a `conc.tell` to a registered actor (e.g. the WS
+#     outbound bridge from lex-lang 0.9.5's `serve_ws_fn_actor`),
+#     or otherwise do anything beyond consuming the Ctx. The effect
+#     row is fixed-and-wide because Lex 0.9.4+ doesn't support
+#     effect-row variables on closures stored in record fields;
+#     narrow the body, not the declaration.
 #
 # The trie (route_trie.lex) stores routes as a `HandlerBody` variant
 # (HPure | HEff) at terminal nodes; `dispatch` matches the variant
@@ -98,8 +100,11 @@ fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> res
 
 # Register an effectful handler. Handler must declare its effects
 # from the fixed-wide set [io, time, crypto, random, sql, fs_read,
-# fs_write, net]. Narrow the handler *body*, not the declaration.
-fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response) -> Router {
+# fs_write, net, concurrent]. Narrow the handler *body*, not the
+# declaration. `concurrent` is in the set so handlers can drive
+# the WS outbound bridge actors registered by serve_ws_fn_actor
+# (lex-lang 0.9.5) via conc.lookup + conc.tell.
+fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
   add_record(r, method, pattern, HEff(handler), None, empty_meta())
 }
 
@@ -111,7 +116,7 @@ fn handler_json(r :: Router, method :: Str, pattern :: Str, validator :: v.Valid
 }
 
 # Effectful variant of handler_json.
-fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response) -> Router {
+fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
   add_record(r, method, pattern, HEff(handler), Some(validator), empty_meta())
 }
 
@@ -146,7 +151,7 @@ fn route_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.C
   add_record(r, method, pattern, HPure(handler), None, meta)
 }
 
-fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response, meta :: RouteMeta) -> Router {
+fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HEff(handler), None, meta)
 }
 
@@ -154,7 +159,7 @@ fn handler_json_with_meta(r :: Router, method :: Str, pattern :: Str, validator 
   add_record(r, method, pattern, HPure(handler), Some(validator), meta)
 }
 
-fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response, meta :: RouteMeta) -> Router {
+fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HEff(handler), Some(validator), meta)
 }
 
@@ -163,7 +168,7 @@ fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, 
 # the middleware stack's [io, time, crypto, random]. HPure routes
 # under this dispatcher pay the wider effect row in the call site's
 # declaration but don't actually invoke the wider effects.
-fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match rt.lookup(r.trie, method, path_segs) {
@@ -210,7 +215,7 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
 # the only difference is route lookup cost (O(N × M) here vs O(M) via
 # the trie). Not used by sub_router / openapi / the public README
 # examples — those go through dispatch.
-fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match find_match(r.routes, method, path_segs) {
@@ -227,14 +232,14 @@ fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, r
   }
 }
 
-fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   run_with_middleware_h(mws, record.body, c)
 }
 
 # Trie-driven dispatch path: we only have the body variant, not
 # the full RouteRecord. run_with_middleware_h is the workhorse;
 # run_with_middleware stays as a thin shim for the list.fold path.
-fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   match mw.run_pre(mws, c) {
     Short(early) => mw.run_post(mws, c, early),
     Continue(c2) => {
