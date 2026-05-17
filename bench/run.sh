@@ -35,9 +35,13 @@ LEX_DB_PORT=8084
 
 # Default endpoints exercised by every server in the framework-floor
 # matrix. The DB server (lex-web-db) substitutes its own list — see
-# `endpoints_for` below.
+# `endpoints_for` below. `plaintext_pipe` is a synthetic name that
+# drives /plaintext with HTTP/1.1 pipelining (PIPELINE_DEPTH reqs
+# per connection) via `wrk -s bench/pipeline.lua`. Same wire path,
+# different driver — matches TFB's leaderboard plaintext column.
 ENDPOINTS=(
   "plaintext:/plaintext"
+  "plaintext_pipe:/plaintext"
   "json:/json"
   "user_id:/users/usr_001"
 )
@@ -49,6 +53,7 @@ ENDPOINTS_LEX_WEB_DB=(
   "json:/json"
   "db:/db"
   "queries:/queries?queries=20"
+  "updates:/updates?queries=20"
 )
 
 endpoints_for() {
@@ -57,6 +62,14 @@ endpoints_for() {
     *)          printf '%s\n' "${ENDPOINTS[@]}" ;;
   esac
 }
+
+# Pipelined-plaintext is a per-row override that drives the same
+# endpoint with `wrk -s bench/pipeline.lua` so each connection
+# fires PIPELINE_DEPTH (default 16) requests per round-trip. TFB's
+# published plaintext column reports this configuration; lex-web
+# inherited pipelining via lex-lang 0.9.3's hyper+tokio swap.
+PIPELINE_LUA="${PIPELINE_LUA:-bench/pipeline.lua}"
+PIPELINE_DEPTH="${PIPELINE_DEPTH:-16}"
 
 log() { printf '[bench] %s\n' "$*" >&2; }
 
@@ -169,11 +182,26 @@ bench_one() {
   while IFS= read -r entry; do
     [[ -z "$entry" ]] && continue
     local name="${entry%%:*}" path="${entry#*:}"
+    # The `plaintext_pipe` synthetic name swaps wrk's vanilla
+    # per-request driver for `-s bench/pipeline.lua`, which sends
+    # PIPELINE_DEPTH (default 16) requests per round-trip per
+    # connection. Same path, different driver — TFB's leaderboard
+    # plaintext row uses this pipelined shape.
+    local wrk_extra=""
+    if [[ "$name" == "plaintext_pipe" ]]; then
+      if [[ -f "$PIPELINE_LUA" ]]; then
+        wrk_extra="-s $PIPELINE_LUA"
+      else
+        log "skip $name on $server: $PIPELINE_LUA not found"
+        continue
+      fi
+    fi
     for trial in $(seq 1 "$TRIALS"); do
       local out="$RESULTS/${server}_${name}_t${trial}.txt"
       log "wrk: $server $name ($path) trial $trial/$TRIALS"
-      wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency \
-          "http://127.0.0.1:$port$path" > "$out"
+      PIPELINE_DEPTH="$PIPELINE_DEPTH" \
+        wrk -t"$THREADS" -c"$CONNECTIONS" -d"$DURATION" --latency \
+            $wrk_extra "http://127.0.0.1:$port$path" > "$out"
       local row; row=$(parse_wrk "$out")
       printf '%s\t%s\t%d\t%s\n' "$server" "$name" "$trial" "$row" \
         >> "$RESULTS/trials.tsv"
