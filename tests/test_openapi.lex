@@ -161,9 +161,53 @@ fn same_path_different_methods_one_path_item() -> Result[Unit, Str] {
   }
 }
 
+# ---- One-shot mount ----------------------------------------------
+fn mount_registers_three_routes() -> Result[Unit, Str] {
+  let r := router.new() |> fn (r :: router.Router) -> router.Router {
+    router.route(r, "GET", "/health", noop_handler)
+  }
+  let mounted := openapi.mount(r, openapi.make_info("T", "1"))
+  let methods_and_paths := list.map(mounted.routes, fn (rec :: router.RouteRecord) -> Str {
+    str.concat(rec.method, str.concat(" ", rec.pattern))
+  })
+  let has_spec := list.fold(methods_and_paths, false, fn (acc :: Bool, p :: Str) -> Bool {
+    acc or p == "GET /openapi.json"
+  })
+  let has_docs := list.fold(methods_and_paths, false, fn (acc :: Bool, p :: Str) -> Bool {
+    acc or p == "GET /docs"
+  })
+  let has_redoc := list.fold(methods_and_paths, false, fn (acc :: Bool, p :: Str) -> Bool {
+    acc or p == "GET /redoc"
+  })
+  if has_spec and has_docs and has_redoc {
+    Ok(())
+  } else {
+    Err("mount did not register all three routes")
+  }
+}
+
+fn mount_at_uses_custom_paths() -> Result[Unit, Str] {
+  let opts := { spec_path: "/api/v1/spec.json", docs_path: "/api/v1/swagger", redoc_path: "/api/v1/redoc" }
+  let mounted := openapi.mount_at(router.new(), openapi.make_info("T", "1"), opts)
+  let patterns := list.map(mounted.routes, fn (rec :: router.RouteRecord) -> Str {
+    rec.pattern
+  })
+  let has_custom_spec := list.fold(patterns, false, fn (acc :: Bool, p :: Str) -> Bool {
+    acc or p == "/api/v1/spec.json"
+  })
+  let has_custom_docs := list.fold(patterns, false, fn (acc :: Bool, p :: Str) -> Bool {
+    acc or p == "/api/v1/swagger"
+  })
+  if has_custom_spec and has_custom_docs {
+    Ok(())
+  } else {
+    Err("mount_at did not honour custom paths")
+  }
+}
+
 # ---- Suite -------------------------------------------------------
 fn suite() -> List[Result[Unit, Str]] {
-  [static_path_unchanged(), param_segment_converted(), multi_param_converted(), splat_converted(), param_route_emits_parameter_object(), static_route_no_parameter_objects(), route_with_validator_has_request_body(), route_without_validator_has_no_request_body(), validator_schema_fields_in_doc(), doc_has_openapi_version(), doc_has_info_title_and_version(), same_path_different_methods_one_path_item()]
+  [static_path_unchanged(), param_segment_converted(), multi_param_converted(), splat_converted(), param_route_emits_parameter_object(), static_route_no_parameter_objects(), route_with_validator_has_request_body(), route_without_validator_has_no_request_body(), validator_schema_fields_in_doc(), doc_has_openapi_version(), doc_has_info_title_and_version(), same_path_different_methods_one_path_item(), mount_registers_three_routes(), mount_at_uses_custom_paths()]
 }
 
 fn run_all() -> Unit {

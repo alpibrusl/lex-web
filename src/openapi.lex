@@ -26,7 +26,13 @@ import "std.list" as list
 
 import "std.map" as map
 
+import "./ctx" as ctx
+
+import "./response" as resp
+
 import "./router" as router
+
+import "./docs" as docs
 
 import "lex-schema/json_value" as jv
 
@@ -277,6 +283,43 @@ fn openapi_path(pattern :: Str) -> Str {
     }
   })
   str.join(converted, "/")
+}
+
+# ---- One-shot mount ----------------------------------------------
+# Options record for `mount_at`. Defaults match FastAPI's conventions
+# so users coming from there can swap frameworks without re-learning
+# URLs.
+type MountOpts = { spec_path :: Str, docs_path :: Str, redoc_path :: Str }
+
+fn default_mount_opts() -> MountOpts {
+  { spec_path: "/openapi.json", docs_path: "/docs", redoc_path: "/redoc" }
+}
+
+# Register `/openapi.json` + `/docs` (Swagger UI) + `/redoc` on the
+# router in one call. The OpenAPI document is snapshotted at mount
+# time, so call this AFTER all application routes are added.
+#
+# Example:
+#   let app := router.new()
+#         |> fn (r) -> router.Router { router.route(r, "GET", "/items", list_items) }
+#         |> fn (r) -> router.Router { openapi.mount(r, openapi.make_info("my-api", "1.0.0")) }
+fn mount(r :: router.Router, info :: Info) -> router.Router {
+  mount_at(r, info, default_mount_opts())
+}
+
+fn mount_at(r :: router.Router, info :: Info, opts :: MountOpts) -> router.Router {
+  let spec_str := export_openapi_str(r, info)
+  let title := info.title
+  let spec_path := opts.spec_path
+  let r1 := router.route(r, "GET", opts.spec_path, fn (_c :: ctx.Ctx) -> resp.Response {
+    resp.json(spec_str)
+  })
+  let r2 := router.route(r1, "GET", opts.docs_path, fn (_c :: ctx.Ctx) -> resp.Response {
+    resp.html(docs.swagger_ui_html(spec_path, title))
+  })
+  router.route(r2, "GET", opts.redoc_path, fn (_c :: ctx.Ctx) -> resp.Response {
+    resp.html(docs.redoc_html(spec_path, title))
+  })
 }
 
 # Return unique route patterns in insertion order.
