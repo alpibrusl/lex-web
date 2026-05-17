@@ -29,8 +29,8 @@
 # Route handlers come in two shapes:
 #
 #   HPure  ::  (Ctx) -> Response                            — registered via router.route
-#   HEff   ::  (Ctx) -> [io, time, crypto, random, sql,
-#                        fs_read, fs_write, net] Response   — via router.route_effectful
+#   HEff   ::  (Ctx) -> [io, time, crypto, random, sql, fs_read,
+#                        fs_write, net, concurrent] Response   — via router.route_effectful
 #
 # Lex's effect rows are invariant — a pure handler cannot widen
 # to an effectful function type — and effect-row variables on record
@@ -41,7 +41,7 @@
 # generous: narrow the handler *body*, not the type, per the lex
 # agent-guidelines.
 
-type HandlerBody = HPure((ctx.Ctx) -> resp.Response) | HEff((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response)
+type HandlerBody = HPure((ctx.Ctx) -> resp.Response) | HEff((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response)
 
 import "std.str" as str
 

@@ -61,7 +61,7 @@ fn route(r :: SubRouter, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> 
   add(r, mk_sub_route(method, pattern, HPure(handler), None, "", "", 0))
 }
 
-fn route_effectful(r :: SubRouter, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response) -> SubRouter {
+fn route_effectful(r :: SubRouter, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> SubRouter {
   add(r, mk_sub_route(method, pattern, HEff(handler), None, "", "", 0))
 }
 
@@ -69,7 +69,7 @@ fn handler_json(r :: SubRouter, method :: Str, pattern :: Str, validator :: v.Va
   add(r, mk_sub_route(method, pattern, HPure(handler), Some(validator), "", "", 0))
 }
 
-fn handler_json_effectful(r :: SubRouter, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response) -> SubRouter {
+fn handler_json_effectful(r :: SubRouter, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> SubRouter {
   add(r, mk_sub_route(method, pattern, HEff(handler), Some(validator), "", "", 0))
 }
 

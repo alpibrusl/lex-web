@@ -57,7 +57,7 @@ fn serve_from_map(c :: ctx.Ctx, bundle :: Bundle) -> resp.Response {
 # ---- Filesystem-backed -------------------------------------------
 fn mount_dir(r :: router.Router, prefix :: Str, dir :: Str) -> router.Router {
   let pattern := str.concat(strip_trailing_slash(prefix), "/*path")
-  router.route_effectful(r, "GET", pattern, fn (c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+  router.route_effectful(r, "GET", pattern, fn (c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
     serve_from_dir(c, dir)
   })
 }

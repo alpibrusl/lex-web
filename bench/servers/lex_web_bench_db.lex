@@ -92,7 +92,7 @@ fn json_hello(c :: ctx.Ctx) -> resp.Response {
 # lex-orm's query builder — the bench's `/db` row is meant to measure
 # "framework dispatch + a single round-trip", and the builder adds a
 # layer that doesn't reflect the TFB scoring shape.
-fn db_single(db :: conn.ConnDb, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+fn db_single(db :: conn.ConnDb, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   let id := pick_id()
   let raw :: Result[List[World], SqlError] := sql.query(db.handle, "SELECT id, randomNumber FROM world WHERE id = ?", [PInt(id)])
   match raw {
@@ -107,7 +107,7 @@ fn db_single(db :: conn.ConnDb, c :: ctx.Ctx) -> [io, time, crypto, random, sql,
 # Same shape as /db, repeated N times. The handler accepts the request
 # context only to read the `?queries=N` parameter; everything else is
 # the same as `db_single`.
-fn db_queries(db :: conn.ConnDb, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+fn db_queries(db :: conn.ConnDb, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   let n := match ctx.query_param(c, "queries") {
     Some(s) => match str.to_int(s) {
       Some(x) => clamp(x, 1, 500),
@@ -160,11 +160,11 @@ fn app(db :: conn.ConnDb) -> router.Router {
   }) |> fn (r :: router.Router) -> router.Router {
     router.route(r, "GET", "/json", json_hello)
   }) |> fn (r :: router.Router) -> router.Router {
-    router.route_effectful(r, "GET", "/db", fn (c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+    router.route_effectful(r, "GET", "/db", fn (c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
       db_single(db, c)
     })
   }) |> fn (r :: router.Router) -> router.Router {
-    router.route_effectful(r, "GET", "/queries", fn (c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net] resp.Response {
+    router.route_effectful(r, "GET", "/queries", fn (c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
       db_queries(db, c)
     })
   }
@@ -203,7 +203,7 @@ fn insert_loop(i :: Int, n :: Int, db :: conn.ConnDb) -> [sql, time] Result[Unit
 # Boundary adaptor matches lex_web_bench.lex: rebuild the request as
 # a `ctx.RawRequest`, call dispatch, wrap the framework body in
 # `BodyStr(...)` on the way out.
-fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write] Unit {
+fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write, concurrent] Unit {
   match conn.connect_sqlite(":memory:") {
     Err(_) => io.print("failed to open sqlite"),
     Ok(db) => {
@@ -213,7 +213,7 @@ fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write] Unit {
           let __lex_discard_1 := io.print("bench server on :8084")
           let __lex_discard_2 := io.print("  GET /plaintext  /json  /db  /queries?queries=N")
           let r := app(db)
-          let handler := fn (req :: Request) -> [io, time, crypto, random, sql, fs_read, fs_write, net] Response {
+          let handler := fn (req :: Request) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Response {
             let raw := { body: req.body, method: req.method, path: req.path, query: req.query, headers: req.headers }
             let resp_v := router.dispatch(r, raw)
             { status: resp_v.status, body: BodyStr(resp_v.body), headers: resp_v.headers }
