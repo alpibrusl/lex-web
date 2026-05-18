@@ -35,6 +35,7 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 | `src/docs.lex`          | Swagger UI / ReDoc HTML pages, auto-mountable at `/docs` and `/redoc` |
 | `src/static_files.lex`  | In-memory bundle (`mount_map`) and filesystem (`mount_dir`) static serving |
 | `src/exceptions.lex`    | Typed-error registry (FastAPI's `exception_handler`) |
+| `src/serve.lex`         | `serve` / `serve_with` / `serve_quic` — wrap `net.serve_*` with router dispatch; HTTP/1.1, HTTP/2, HTTP/3 entry points |
 
 ## Example applications
 
@@ -84,6 +85,70 @@ fn main() -> [net, io, time] Nil {
   net.serve_fn(8080, handle)
 }
 ```
+
+`src/serve.lex` exposes the lex-lang listener entry points under a single
+namespace (the same way `src/ws.lex` groups WebSocket entry points). It's a
+thin passthrough — callers still write the `fn handle(req) { router.dispatch(app(), req) }`
+boilerplate the existing examples use:
+
+```lex
+import "../src/serve" as web_serve
+
+fn handle(req :: ctx.RawRequest) -> [io, time] resp.Response {
+  router.dispatch(app(), req)
+}
+
+fn main() -> [net, io, time] Nil {
+  web_serve.serve(8080, handle)
+}
+```
+
+## HTTP/2 and HTTP/3 (requires lex-lang 0.9.6+)
+
+`serve.lex`'s `serve_with` and `serve_quic` wrap
+[lex-lang#497](https://github.com/alpibrusl/lex-lang/pull/499) (`net.serve_fn_with`)
+and [lex-lang#496](https://github.com/alpibrusl/lex-lang/pull/501) (`net.serve_quic_fn`).
+
+HTTP/2 over the same TCP listener (preface-detected, falls back to HTTP/1.1):
+
+```lex
+import "../src/serve" as web_serve
+
+fn handle(req :: ctx.RawRequest) -> [io, time] resp.Response {
+  router.dispatch(app(), req)
+}
+
+fn main() -> [net, io, time] Nil {
+  let opts := { http2: true, inline_vm: false, host: "0.0.0.0" }
+  web_serve.serve_with(8080, handle, opts)
+}
+```
+
+HTTP/3 over QUIC (UDP). Mandatory TLS — pair with `std.tls`:
+
+```lex
+import "../src/serve" as web_serve
+import "std.tls"      as tls
+
+fn handle(req :: ctx.RawRequest) -> [io, time] resp.Response {
+  router.dispatch(app(), req)
+}
+
+fn main() -> [net, io, time] Nil {
+  match tls.self_signed("localhost") {
+    Ok(t)  => web_serve.serve_quic(4433, t, handle),
+    Err(_) => (),
+  }
+}
+```
+
+Production deployments use a CA-signed cert via `tls.from_pem_files(cert, key)`
+and typically pair a TCP listener on `:443` (HTTP/1.1 + 2) with a UDP listener
+on `:443` (HTTP/3) for client transport negotiation.
+
+The QUIC path requires the `lex` binary to be built with `cargo build --release --features quic` — the default release omits it to keep the dep graph
+slim. Without the feature, `serve_quic` returns a clear "compiled without
+quic" error at startup.
 
 ## Persistence — pairs with lex-orm
 
