@@ -154,7 +154,7 @@ fn mount(main :: router.Router, sub :: SubRouter) -> router.Router {
     let full := join_path(sub.prefix, sr.pattern)
     let merged_tags := dedup_concat(sub.tags, sr.tags)
     let stage1 := router.add_record(acc, sr.method, full, sr.body, sr.validator, router.empty_meta())
-    router.attach_meta(stage1, sr.method, full, { tags: merged_tags, summary: sr.summary, description: sr.description, status: sr.status, response_model: None })
+    router.attach_meta(stage1, sr.method, full, { tags: merged_tags, summary: sr.summary, description: sr.description, status: sr.status, response_model: None, security: [] })
   })
 }
 
