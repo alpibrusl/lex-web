@@ -41,6 +41,15 @@ jobs:
           set -e
           fail=0
           for f in src/*.lex; do
+            # src/serve.lex wraps the lex-lang 0.9.6 builtins
+            # `net.serve_fn_with` (#497) and `net.serve_quic_fn` (#496),
+            # which the pinned 0.9.5 toolchain doesn't know about.
+            # Skip this single file under 0.9.5; remove this guard
+            # once lex.toml is bumped to lex >= 0.9.6.
+            if [ "$f" = "src/serve.lex" ]; then
+              echo "::notice file=$f::skipping lex check — requires lex >= 0.9.6 (see lex-web#23, #24)"
+              continue
+            fi
             if ! lex check "$f" >/dev/null 2>&1; then
               echo "::error file=$f::lex check failed"
               lex check "$f" 2>&1 | head -3
