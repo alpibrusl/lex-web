@@ -13,9 +13,10 @@
 #   - Large file chunking without buffering the full body
 #
 # A streaming handler returns `StreamResponse` instead of `Response`.
-# The router does not yet dispatch `StreamResponse` natively; mount
-# a streaming endpoint directly against `net.serve_fn` until router
-# support lands in v0.4.
+# Register via `router.route_stream` and dispatch through
+# `router.dispatch_outcome` (#29) — the bridge in `main` matches
+# the `DStream(...)` variant and wraps the body in `BodyStream(...)`
+# for `net.serve_fn`. See `examples/streaming_api.lex`.
 #
 # Effects: none (constructors are pure; Iter evaluation is lazy).
 

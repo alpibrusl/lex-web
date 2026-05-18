@@ -59,6 +59,8 @@ import "lex-schema/validator" as v
 
 import "lex-schema/json_value" as jv
 
+import "./stream" as stream
+
 # ---- Per-route metadata -----------------------------------------
 # Optional descriptors that ride along on each route. The router
 # never inspects them; they exist for openapi.export_openapi (and
@@ -138,6 +140,31 @@ fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator 
   add_record(r, method, pattern, HEff(handler, None), Some(validator), empty_meta())
 }
 
+# Register a streaming handler (#29). Handler returns a
+# `stream.StreamResponse` whose body is a lazy `Iter[Str]`; the
+# router threads it through `dispatch_outcome` and the calling
+# bridge wraps it in `BodyStream(...)` for `net.serve_fn`.
+#
+# Plain `dispatch` (and `dispatch_pure`) don't support streaming
+# routes — they 500 with a clear hint. Use `dispatch_outcome` in
+# your `main` bridge to pick up streaming routes.
+#
+# Streaming routes inherit the same wide HEff effect row as
+# `route_effectful` so handlers can pull from a database, an
+# actor, or the file system to source chunks. Narrow the body,
+# not the type.
+fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse) -> Router {
+  add_record(r, method, pattern, HStream(handler, None), None, empty_meta())
+}
+
+# Streaming + RouteMeta. Use when you want OpenAPI metadata
+# (tags / summary / description) on a stream route. response_model
+# is accepted for symmetry but NOT enforced on stream routes in
+# v1 — see route_trie.lex for the rationale.
+fn route_stream_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse, meta :: RouteMeta) -> Router {
+  add_record(r, method, pattern, HStream(handler, meta.response_model), None, meta)
+}
+
 # Add a middleware to the stack. Middlewares run in registration
 # order, outermost first (like Express `app.use`).
 fn use_mw(r :: Router, kind :: mw.MiddlewareKind) -> Router {
@@ -164,6 +191,7 @@ fn attach_meta(r :: Router, method :: Str, pattern :: Str, meta :: RouteMeta) ->
       let new_body := match rec.body {
         HPure(h, _) => HPure(h, meta.response_model),
         HEff(h, _) => HEff(h, meta.response_model),
+        HStream(h, _) => HStream(h, meta.response_model),
       }
       { method: rec.method, pattern: rec.pattern, segments: rec.segments, body: new_body, validator: rec.validator, meta: meta }
     } else {
@@ -230,7 +258,71 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
       match body {
         HPure(h, rm) => apply_response_model(h(c), rm),
         HEff(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_effectful and cannot be invoked from dispatch_pure. Use dispatch with --allow-effects, or restrict the route to a pure handler.", "text/plain"),
+        HStream(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_stream and cannot be invoked from dispatch_pure. Use dispatch_outcome and match DStream in your main bridge.", "text/plain"),
       }
+    },
+  }
+}
+
+# ---- dispatch_outcome (#29) --------------------------------------
+#
+# Stream-aware dispatcher. Returns `DispatchOutcome` — a sum that
+# encodes both the plain `resp.Response` case and the streaming
+# `stream.StreamResponse` case so callers' `main` bridge can pick
+# the right `BodyStr` / `BodyStream` wrapping for `net.serve_fn`:
+#
+#   fn handle(req :: Request) -> [HEff] Response {
+#     let raw := { body: req.body, method: req.method, path: req.path, query: req.query, headers: req.headers }
+#     match router.dispatch_outcome(app(), raw) {
+#       DPlain(r)  => { status: r.status, body: BodyStr(r.body),    headers: r.headers },
+#       DStream(s) => { status: s.status, body: BodyStream(s.body), headers: s.headers },
+#     }
+#   }
+#
+# `dispatch` continues to be the right call when an app has no
+# streaming routes — its return type is simpler. Mix-and-match
+# apps want `dispatch_outcome`.
+type DispatchOutcome = DPlain(resp.Response) | DStream(stream.StreamResponse)
+
+fn dispatch_outcome(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] DispatchOutcome {
+  let method := str.to_upper(req.method)
+  let path_segs := split_path(req.path)
+  match rt.lookup(r.trie, method, path_segs) {
+    None => DPlain(resp.not_found()),
+    Some(matched) => {
+      let body := match matched {
+        (b, _) => b,
+      }
+      let params := match matched {
+        (_, p) => p,
+      }
+      let c := ctx.from_request(req, params)
+      run_with_middleware_outcome(r.middleware, body, c)
+    },
+  }
+}
+
+# Workhorse for `dispatch_outcome`. Pre-middleware runs over Ctx;
+# if it short-circuits with a Response we return DPlain(...) (a
+# 401 short-circuit can't produce a stream). On Continue, plain
+# handlers go through `run_with_middleware_h`'s post chain; stream
+# handlers thread the stream through `run_post_stream` — which
+# applies post-middleware to a STUB response carrying just status
+# + headers, then merges the mutated status/headers back into the
+# stream. Body-mutating middleware (gzip annotation, request-id,
+# CORS) all work on the stub; body itself passes through untouched.
+fn run_with_middleware_outcome(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] DispatchOutcome {
+  match mw.run_pre(mws, c) {
+    Short(early) => DPlain(mw.run_post(mws, c, early)),
+    Continue(c2) => match body {
+      HPure(h, rm) => DPlain(mw.run_post(mws, c2, apply_response_model(h(c2), rm))),
+      HEff(h, rm) => DPlain(mw.run_post(mws, c2, apply_response_model(h(c2), rm))),
+      HStream(h, _) => {
+        let sr := h(c2)
+        let stub := { body: "", status: sr.status, headers: sr.headers }
+        let processed := mw.run_post(mws, c2, stub)
+        DStream({ body: sr.body, status: processed.status, headers: processed.headers })
+      },
     },
   }
 }
@@ -279,6 +371,7 @@ fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody,
       let raw_resp := match body {
         HPure(h, rm) => apply_response_model(h(c2), rm),
         HEff(h, rm) => apply_response_model(h(c2), rm),
+        HStream(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_stream. Use dispatch_outcome and match DStream in your main bridge.", "text/plain"),
       }
       mw.run_post(mws, c2, raw_resp)
     },
