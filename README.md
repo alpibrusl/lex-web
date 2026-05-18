@@ -36,6 +36,9 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 | `src/static_files.lex`  | In-memory bundle (`mount_map`) and filesystem (`mount_dir`) static serving |
 | `src/exceptions.lex`    | Typed-error registry (FastAPI's `exception_handler`) |
 | `src/serve.lex`         | `serve` / `serve_with` / `serve_quic` — wrap `net.serve_*` with router dispatch; HTTP/1.1, HTTP/2, HTTP/3 entry points |
+| `src/auth.lex`          | JWT bearer (`verify_bearer`, `issue`) — wraps lex-crypto/jwt |
+| `src/auth_basic.lex`    | HTTP Basic — `verify(c, check)`, `passwords_equal`, RFC 7617 `WWW-Authenticate` challenge (#26) |
+| `src/auth_apikey.lex`   | API key — `verify_header` / `verify_query` / `verify_cookie` (#26) |
 
 ## Example applications
 
@@ -52,6 +55,7 @@ closest to what you're building.
 | `jsonrpc_ws.lex` | JSON-RPC 2.0 over WebSocket on `:9000`, browser console on `:8080` | `ws`, `router`, lex-schema `json_value` |
 | `webhook_receiver.lex` | Signed webhook ingestion with idempotency dedup + background processing | `depends.bind`, `exceptions`, `background`, `params.header_str`, RFC 7807 |
 | `middleware_custom.lex` | Bearer-token gate + response-stamping via `mw.custom` | `middleware.custom` (#27) |
+| `auth_modes.lex`        | HTTP Basic + API key (header / cookie) + JWT in one app | `auth_basic`, `auth_apikey`, `auth` (#26) |
 
 Run any of them with `lex run --allow-effects io,net,time examples/<file> main`
 (some need additional effects — each file's header comment carries the exact
