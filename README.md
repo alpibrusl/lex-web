@@ -17,7 +17,7 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 |--------|---------|
 | `src/ctx.lex`           | `Ctx` — enriched request context (path params, query, headers, cookies) |
 | `src/response.lex`      | Response builders (`json`, `text`, `html`, `created`, `not_found`, `problem`, …) |
-| `src/router.lex`        | Route table + dispatcher; `RouteMeta` for tags / summary / status; `attach_meta`, `route_with_meta` |
+| `src/router.lex`        | Route table + dispatcher; `RouteMeta` for tags / summary / status / `response_model` (#28); `attach_meta`, `route_with_meta`, `with_response_model` |
 | `src/middleware.lex`    | `MwCors` (with OPTIONS preflight), `MwBodyLimit`, `MwRequestId`, `MwLogger`, `MwGzip`, `MwTrustedHost`, `MwCustom` (user-defined hooks — #27) |
 | `src/body.lex`          | `json_body`, `require_json_body`, `form_body`, `form_body_raw`, `raw_body` |
 | `src/openapi.lex`       | Auto-generates OpenAPI 3.1 — tags, summaries, descriptions, operationIds, per-route success status |

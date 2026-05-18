@@ -32,6 +32,16 @@
 #   HEff   ::  (Ctx) -> [io, time, crypto, random, sql, fs_read,
 #                        fs_write, net, concurrent] Response   — via router.route_effectful
 #
+# Each variant carries an `Option[v.Validator]` as a second positional
+# field — the `response_model` from RouteMeta (#28). `None` means no
+# output validation / field filtering; `Some(validator)` causes
+# `router.dispatch` to project the handler's response body through
+# `v.serialize` before sending, stripping unknown fields per the
+# schema's allowlist and 500-ing on validation failure. Bundled into
+# HandlerBody so the trie's `Map[Str, HandlerBody]` stays the
+# single source of truth for dispatch — no parallel meta map and
+# no second lookup on the hot path.
+#
 # Lex's effect rows are invariant — a pure handler cannot widen
 # to an effectful function type — and effect-row variables on record
 # fields aren't a thing in 0.9.4, so the two shapes are kept in a
@@ -41,13 +51,15 @@
 # generous: narrow the handler *body*, not the type, per the lex
 # agent-guidelines.
 
-type HandlerBody = HPure((ctx.Ctx) -> resp.Response) | HEff((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response)
+type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, Option[v.Validator]))
 
 import "std.str" as str
 
 import "std.list" as list
 
 import "std.map" as map
+
+import "lex-schema/validator" as v
 
 import "./ctx" as ctx
 
