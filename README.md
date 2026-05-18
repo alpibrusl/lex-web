@@ -40,6 +40,7 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 | `src/auth.lex`          | JWT bearer (`verify_bearer`, `issue`) — wraps lex-crypto/jwt |
 | `src/auth_basic.lex`    | HTTP Basic — `verify(c, check)`, `passwords_equal`, RFC 7617 `WWW-Authenticate` challenge (#26) |
 | `src/auth_apikey.lex`   | API key — `verify_header` / `verify_query` / `verify_cookie` (#26) |
+| `src/auth_oauth2.lex`   | OAuth2 — `verify_oauth2_bearer`, `require_scopes`, Password/AuthorizationCode/ClientCredentials flow schemes + OpenAPI emit (#26) |
 
 ## Example applications
 

@@ -61,6 +61,8 @@ import "lex-schema/json_value" as jv
 
 import "./stream" as stream
 
+import "./auth_oauth2" as o2
+
 # ---- Per-route metadata -----------------------------------------
 # Optional descriptors that ride along on each route. The router
 # never inspects them; they exist for openapi.export_openapi (and
@@ -79,17 +81,34 @@ import "./stream" as stream
 #                    `response_model=` exposes. On validation
 #                    failure the framework replaces the response with
 #                    a 500. None = no response-side processing.
-type RouteMeta = { tags :: List[Str], summary :: Str, description :: Str, status :: Int, response_model :: Option[v.Validator] }
+# Per-route security requirement. Names the registered OAuth2
+# scheme via `scheme_name` (must match `OAuth2Scheme.name` passed
+# to `router.add_security_scheme`); `scopes` is the OAuth2 scope
+# subset this operation requires. Empty list = scheme is required
+# but no specific scopes (the bearer just has to be authenticated).
+type SecurityRequirement = { scheme_name :: Str, scopes :: List[Str] }
+
+type RouteMeta = { tags :: List[Str], summary :: Str, description :: Str, status :: Int, response_model :: Option[v.Validator], security :: List[SecurityRequirement] }
 
 fn empty_meta() -> RouteMeta {
-  { tags: [], summary: "", description: "", status: 0, response_model: None }
+  { tags: [], summary: "", description: "", status: 0, response_model: None, security: [] }
+}
+
+# Attach a security requirement to a RouteMeta. The OpenAPI emit
+# turns this into `security: [{ <scheme_name>: <scopes> }]` on
+# the operation object — Swagger UI shows the lock icon and runs
+# the scheme's flow when "Authorize" is clicked. Stack multiple
+# calls to require ANY of several schemes (OR semantics per OpenAPI
+# spec).
+fn with_security(m :: RouteMeta, scheme_name :: Str, scopes :: List[Str]) -> RouteMeta {
+  { tags: m.tags, summary: m.summary, description: m.description, status: m.status, response_model: m.response_model, security: list.concat(m.security, [{ scheme_name: scheme_name, scopes: scopes }]) }
 }
 
 # Convenience builder for the common "I just want a response_model"
 # case. `meta.empty_meta() |> with_response_model(v)` keeps the
 # `attach_meta(...)` call site one line.
 fn with_response_model(m :: RouteMeta, validator :: v.Validator) -> RouteMeta {
-  { tags: m.tags, summary: m.summary, description: m.description, status: m.status, response_model: Some(validator) }
+  { tags: m.tags, summary: m.summary, description: m.description, status: m.status, response_model: Some(validator), security: m.security }
 }
 
 # ---- Types -------------------------------------------------------
@@ -97,11 +116,20 @@ fn with_response_model(m :: RouteMeta, validator :: v.Validator) -> RouteMeta {
 # the rest of the record is unchanged from v0.2.
 type RouteRecord = { method :: Str, pattern :: Str, segments :: List[Str], body :: rt.HandlerBody, validator :: Option[v.Validator], meta :: RouteMeta }
 
-type Router = { routes :: List[RouteRecord], middleware :: List[mw.MiddlewareKind], trie :: rt.TrieNode }
+type Router = { routes :: List[RouteRecord], middleware :: List[mw.MiddlewareKind], trie :: rt.TrieNode, security_schemes :: List[o2.OAuth2Scheme] }
 
 # ---- Construction ------------------------------------------------
 fn new() -> Router {
-  { routes: [], middleware: [], trie: rt.empty_node() }
+  { routes: [], middleware: [], trie: rt.empty_node(), security_schemes: [] }
+}
+
+# Register an OAuth2 security scheme (#26). The scheme is emitted
+# under `components.securitySchemes.<scheme.name>` in the OpenAPI
+# doc; routes opt in by name via `RouteMeta.security`. Multiple
+# schemes can co-exist (e.g., a Password flow for first-party
+# clients + an AuthorizationCode flow for third-party).
+fn add_security_scheme(r :: Router, scheme :: o2.OAuth2Scheme) -> Router {
+  { routes: r.routes, middleware: r.middleware, trie: r.trie, security_schemes: list.concat(r.security_schemes, [scheme]) }
 }
 
 # Rebuild the trie from a list of records. O(N) where N = route count;
@@ -168,7 +196,7 @@ fn route_stream_with_meta(r :: Router, method :: Str, pattern :: Str, handler ::
 # Add a middleware to the stack. Middlewares run in registration
 # order, outermost first (like Express `app.use`).
 fn use_mw(r :: Router, kind :: mw.MiddlewareKind) -> Router {
-  { routes: r.routes, middleware: list.concat(r.middleware, [kind]), trie: r.trie }
+  { routes: r.routes, middleware: list.concat(r.middleware, [kind]), trie: r.trie, security_schemes: r.security_schemes }
 }
 
 # Workhorse: takes a HandlerBody directly. The public helpers above
@@ -176,7 +204,7 @@ fn use_mw(r :: Router, kind :: mw.MiddlewareKind) -> Router {
 fn add_record(r :: Router, method :: Str, pattern :: Str, body :: rt.HandlerBody, validator :: Option[v.Validator], meta :: RouteMeta) -> Router {
   let rec := { method: str.to_upper(method), pattern: pattern, segments: split_path(pattern), body: body, validator: validator, meta: meta }
   let new_routes := list.concat(r.routes, [rec])
-  { routes: new_routes, middleware: r.middleware, trie: compile_trie(new_routes) }
+  { routes: new_routes, middleware: r.middleware, trie: compile_trie(new_routes), security_schemes: r.security_schemes }
 }
 
 # ---- Metadata attachment -----------------------------------------
@@ -198,7 +226,7 @@ fn attach_meta(r :: Router, method :: Str, pattern :: Str, meta :: RouteMeta) ->
       rec
     }
   })
-  { routes: updated, middleware: r.middleware, trie: compile_trie(updated) }
+  { routes: updated, middleware: r.middleware, trie: compile_trie(updated), security_schemes: r.security_schemes }
 }
 
 fn route_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response, meta :: RouteMeta) -> Router {

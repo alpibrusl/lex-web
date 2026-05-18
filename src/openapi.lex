@@ -38,6 +38,8 @@ import "lex-schema/json_value" as jv
 
 import "lex-schema/validator" as v
 
+import "./auth_oauth2" as o2
+
 # ---- API info record ---------------------------------------------
 type Info = { title :: Str, version :: Str, description :: Str }
 
@@ -57,7 +59,17 @@ fn export_openapi(r :: router.Router, info :: Info) -> jv.Json {
     0 => base,
     _ => list.concat(base, [("tags", JList(tag_objs))]),
   }
-  JObj(with_tags)
+  let with_components := match list.len(r.security_schemes) {
+    0 => with_tags,
+    _ => list.concat(with_tags, [("components", JObj([("securitySchemes", build_security_schemes(r.security_schemes))]))]),
+  }
+  JObj(with_components)
+}
+
+fn build_security_schemes(schemes :: List[o2.OAuth2Scheme]) -> jv.Json {
+  JObj(list.map(schemes, fn (s :: o2.OAuth2Scheme) -> (Str, jv.Json) {
+    (s.name, o2.to_openapi(s))
+  }))
 }
 
 # Convenience: emit a pretty-printed JSON string directly.
@@ -128,7 +140,23 @@ fn build_operation(rec :: router.RouteRecord) -> jv.Json {
     None => with_tags,
     Some(validator) => list.concat(with_tags, [("requestBody", build_request_body(validator))]),
   }
-  JObj(with_body)
+  let with_security := match list.len(rec.meta.security) {
+    0 => with_body,
+    _ => list.concat(with_body, [("security", build_route_security(rec.meta.security))]),
+  }
+  JObj(with_security)
+}
+
+# Per-operation `security` array. Each entry is an object mapping
+# scheme name to the scope list — OpenAPI semantics is "ALL
+# requirements in an entry must hold; ANY entry across the array
+# satisfies the operation" (so `[{a:[]}, {b:[]}]` = a OR b).
+fn build_route_security(reqs :: List[router.SecurityRequirement]) -> jv.Json {
+  JList(list.map(reqs, fn (req :: router.SecurityRequirement) -> jv.Json {
+    JObj([(req.scheme_name, JList(list.map(req.scopes, fn (s :: Str) -> jv.Json {
+      JStr(s)
+    })))])
+  }))
 }
 
 # Stable operationId from method+pattern: `getUsersId` for
