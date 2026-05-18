@@ -20,6 +20,7 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 | `src/router.lex`        | Route table + dispatcher; `RouteMeta` for tags / summary / status / `response_model` (#28); `attach_meta`, `route_with_meta`, `with_response_model`; `route_stream` + `dispatch_outcome` for streaming routes (#29) |
 | `src/middleware.lex`    | `MwCors` (with OPTIONS preflight), `MwBodyLimit`, `MwRequestId`, `MwLogger`, `MwGzip`, `MwTrustedHost`, `MwCustom` (user-defined hooks — #27) |
 | `src/body.lex`          | `json_body`, `require_json_body`, `form_body`, `form_body_raw`, `raw_body` |
+| `src/multipart.lex`     | `multipart/form-data` parsing — `parse(c, limits)`, `find_file`, `find_text`, RFC 7578 (#25) |
 | `src/openapi.lex`       | Auto-generates OpenAPI 3.1 — tags, summaries, descriptions, operationIds, per-route success status |
 | `src/ws.lex`            | WebSocket server — `serve()`, path helpers, frame helpers |
 | `src/testing.lex`       | Pure test helpers: request builders + `assert_*` assertions |
@@ -56,6 +57,7 @@ closest to what you're building.
 | `webhook_receiver.lex` | Signed webhook ingestion with idempotency dedup + background processing | `depends.bind`, `exceptions`, `background`, `params.header_str`, RFC 7807 |
 | `middleware_custom.lex` | Bearer-token gate + response-stamping via `mw.custom` | `middleware.custom` (#27) |
 | `auth_modes.lex`        | HTTP Basic + API key (header / cookie) + JWT in one app | `auth_basic`, `auth_apikey`, `auth` (#26) |
+| `upload.lex`            | Multipart file upload — `title` text field + `file` upload, returns parsed metadata as JSON | `multipart.parse`, `multipart.find_file`, `multipart.find_text` (#25) |
 
 Run any of them with `lex run --allow-effects io,net,time examples/<file> main`
 (some need additional effects — each file's header comment carries the exact
