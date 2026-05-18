@@ -137,3 +137,51 @@ fn map_ok[A, B](prev :: Result[A, resp.Response], f :: (A) -> B) -> Result[B, re
   }
 }
 
+# ---- Per-request caching ----------------------------------------
+#
+# FastAPI auto-caches dependency results by callable identity: if
+# `Depends(get_db)` shows up twice in a single request, `get_db`
+# runs once. lex-web can't replicate that automatically — Lex's
+# values are immutable, so a dep call returning Ok(value) has no
+# way to write that value back into Ctx for the next dep to read.
+#
+# The closest fit is the "stamp in middleware, read in dep" idiom
+# that the new `Ctx.state` bag (PR #37) enables:
+#
+#   # Middleware (runs once per request, can mutate Ctx via Continue):
+#   fn populate_user(c :: ctx.Ctx) -> [HEff] mw.PreResult {
+#     match compute_user_id(c) {
+#       Err(r)  => Short(r),
+#       Ok(uid) => Continue(ctx.set_state(c, "user-id", uid)),
+#     }
+#   }
+#
+#   # Dep reads from state (zero cost), falls back to recompute
+#   # if the middleware didn't run (test paths, missing middleware):
+#   fn current_user(c :: ctx.Ctx) -> Result[Str, resp.Response] {
+#     depends.cached_str(c, "user-id", compute_user_id)
+#   }
+#
+# Limitations vs FastAPI:
+#   - Cache values are `Str` only. Wrap structured values via
+#     `jv.stringify` / `jv.parse` if you need them. Real opaque
+#     resources (DB handles, file descriptors) don't fit — open
+#     those once in a middleware and pass an ID by Str instead.
+#   - No automatic invalidation. The cache is the request's
+#     Ctx.state; it lives for one request and dies with it. That's
+#     the right scope for FastAPI's per-request semantics, but
+#     across-request caching is out of scope (use a `conc` actor
+#     or std.sql for that).
+# Read `name` from `c.state`. On hit, return `Ok(cached)` without
+# running `fallback`. On miss, run `fallback(c)` and return its
+# Result unchanged — does NOT write the value back to state (Lex
+# Ctx is immutable; the dep call site can't update Ctx). Pair
+# with a pre-middleware that stamps the same key for the
+# stamp-once-read-many pattern.
+fn cached_str(c :: ctx.Ctx, name :: Str, fallback :: (ctx.Ctx) -> Result[Str, resp.Response]) -> Result[Str, resp.Response] {
+  match ctx.get_state(c, name) {
+    Some(v) => Ok(v),
+    None => fallback(c),
+  }
+}
+
