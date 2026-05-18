@@ -167,9 +167,74 @@ fn cookie_absent() -> Result[Unit, Str] {
   }
 }
 
+# ---- State bag --------------------------------------------------
+fn state_starts_empty() -> Result[Unit, Str] {
+  let c := make_ctx("/", "")
+  match ctx.get_state(c, "anything") {
+    None => Ok(()),
+    Some(_) => Err("expected empty state on fresh ctx"),
+  }
+}
+
+fn set_state_round_trips() -> Result[Unit, Str] {
+  let c := ctx.set_state(make_ctx("/", ""), "user-id", "u_42")
+  match ctx.get_state(c, "user-id") {
+    Some(v) => if v == "u_42" {
+      Ok(())
+    } else {
+      Err(str.concat("unexpected value: ", v))
+    },
+    None => Err("expected user-id to be set"),
+  }
+}
+
+fn set_state_is_immutable() -> Result[Unit, Str] {
+  let c0 := make_ctx("/", "")
+  let c1 := ctx.set_state(c0, "k", "v")
+  match ctx.get_state(c0, "k") {
+    None => match ctx.get_state(c1, "k") {
+      Some(_) => Ok(()),
+      None => Err("c1 lost the value"),
+    },
+    Some(_) => Err("c0 was mutated"),
+  }
+}
+
+fn get_state_or_returns_default_when_missing() -> Result[Unit, Str] {
+  let c := make_ctx("/", "")
+  let v := ctx.get_state_or(c, "missing", "fallback")
+  if v == "fallback" {
+    Ok(())
+  } else {
+    Err(str.concat("unexpected default: ", v))
+  }
+}
+
+fn get_state_or_returns_value_when_present() -> Result[Unit, Str] {
+  let c := ctx.set_state(make_ctx("/", ""), "k", "real")
+  let v := ctx.get_state_or(c, "k", "fallback")
+  if v == "real" {
+    Ok(())
+  } else {
+    Err(str.concat("expected real, got: ", v))
+  }
+}
+
+fn set_state_overwrites() -> Result[Unit, Str] {
+  let c := ctx.set_state(ctx.set_state(make_ctx("/", ""), "k", "first"), "k", "second")
+  match ctx.get_state(c, "k") {
+    Some(v) => if v == "second" {
+      Ok(())
+    } else {
+      Err(str.concat("expected overwrite to win, got: ", v))
+    },
+    None => Err("k missing"),
+  }
+}
+
 # ---- Suite -------------------------------------------------------
 fn suite() -> List[Result[Unit, Str]] {
-  [query_simple_kv(), query_second_key(), query_strips_leading_question_mark(), query_absent_returns_none(), query_param_or_default(), query_empty_string_body(), path_param_found(), path_param_missing(), require_path_param_ok(), require_path_param_err(), bearer_token_present(), bearer_token_absent(), content_type_accessor(), header_case_insensitive(), cookie_parsed(), cookie_second_value(), cookie_absent()]
+  [query_simple_kv(), query_second_key(), query_strips_leading_question_mark(), query_absent_returns_none(), query_param_or_default(), query_empty_string_body(), path_param_found(), path_param_missing(), require_path_param_ok(), require_path_param_err(), bearer_token_present(), bearer_token_absent(), content_type_accessor(), header_case_insensitive(), cookie_parsed(), cookie_second_value(), cookie_absent(), state_starts_empty(), set_state_round_trips(), set_state_is_immutable(), get_state_or_returns_default_when_missing(), get_state_or_returns_value_when_present(), set_state_overwrites()]
 }
 
 fn run_all() -> Unit {
