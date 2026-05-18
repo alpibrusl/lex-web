@@ -10,6 +10,7 @@
 #                       in the allowed list
 #   - MwCors         — short-circuits OPTIONS preflight requests with
 #                       a fully-formed 204 response
+#   - MwCustom       — user-defined hooks (#27)
 #
 # Post-middleware runs after the handler returns a Response:
 #   - MwCors      — adds Access-Control-* headers
@@ -19,10 +20,18 @@
 #   - MwGzip      — sets Content-Encoding: gzip when the client
 #                    accepts gzip and the body crosses a threshold
 #                    (actual compression deferred to std.gzip landing)
+#   - MwCustom    — user-defined hooks (#27)
 #
 # Effects:
-#   run_pre               — pure
-#   run_post / apply_post — [io, time, crypto, random]
+#   run_pre / run_post — [io, time, crypto, random, sql, fs_read,
+#                         fs_write, net, concurrent] (HEff effect row)
+#                         — widened so user MwCustom hooks can do
+#                         I/O, talk to a DB, drive an actor, etc.
+#                         The built-in variants emit narrower effects
+#                         but sign the wider contract.
+#   apply_pre  — pure (built-in variants only; MwCustom dispatched
+#                 directly inside run_pre, not via apply_pre)
+#   apply_post — [io, time, crypto, random] (built-in variants only)
 
 import "std.str" as str
 
@@ -42,8 +51,16 @@ import "./ctx" as ctx
 
 import "./response" as resp
 
-# ---- Middleware kind ---------------------------------------------
-type MiddlewareKind = MwCors(List[Str]) | MwBodyLimit(Int) | MwRequestId | MwLogger | MwGzip(Int) | MwTrustedHost(List[Str])
+# ---- Pre-middleware result ----------------------------------------
+# Short means stop immediately and return the given response.
+# Continue means pass the (possibly modified) Ctx to the handler.
+# Declared above MiddlewareKind so MwCustom's closure types can
+# reference it.
+type PreResult = Short(resp.Response) | Continue(ctx.Ctx)
+
+type CustomMw = { name :: Str, before :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response }
+
+type MiddlewareKind = MwCors(List[Str]) | MwBodyLimit(Int) | MwRequestId | MwLogger | MwGzip(Int) | MwTrustedHost(List[Str]) | MwCustom(CustomMw)
 
 fn cors(origins :: List[Str]) -> MiddlewareKind {
   MwCors(origins)
@@ -75,20 +92,36 @@ fn trusted_host(hosts :: List[Str]) -> MiddlewareKind {
   MwTrustedHost(hosts)
 }
 
-# ---- Pre-middleware result ----------------------------------------
-# Short means stop immediately and return the given response.
-# Continue means pass the (possibly modified) Ctx to the handler.
-type PreResult = Short(resp.Response) | Continue(ctx.Ctx)
+# User-defined middleware (#27). `name` shows up in trace output;
+# `before` is the pre-handler hook and `after` is the post-handler
+# hook. Both sign the HEff effect row so they can do real work
+# (logging, DB lookups, rate-limit state via a `conc` actor, etc.).
+# A do-nothing before is `fn (c :: ctx.Ctx) -> [HEff] PreResult { Continue(c) }`;
+# a do-nothing after is `fn (_c, r) -> [HEff] resp.Response { r }`.
+fn custom(name :: Str, before :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> MiddlewareKind {
+  MwCustom({ name: name, before: before, after: after })
+}
 
-fn run_pre(mws :: List[MiddlewareKind], c :: ctx.Ctx) -> PreResult {
-  list.fold(mws, Continue(c), fn (acc :: PreResult, kind :: MiddlewareKind) -> PreResult {
+# `run_pre` aggregates over the middleware stack. Built-in variants
+# go through the pure `apply_pre`; MwCustom is dispatched directly
+# here so its effectful `before` closure runs under the HEff effect
+# row. Effect row widened from pure → HEff for the same reason.
+fn run_pre(mws :: List[MiddlewareKind], c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult {
+  list.fold(mws, Continue(c), fn (acc :: PreResult, kind :: MiddlewareKind) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult {
     match acc {
       Short(_) => acc,
-      Continue(c2) => apply_pre(kind, c2),
+      Continue(c2) => match kind {
+        MwCustom(m) => m.before(c2),
+        _ => apply_pre(kind, c2),
+      },
     }
   })
 }
 
+# Pure dispatch for built-in middleware variants. MwCustom is
+# reached only via run_pre's direct dispatch above — the arm here
+# is a defensive no-op (Continue) in case anyone calls apply_pre
+# with an MwCustom value out of band.
 fn apply_pre(kind :: MiddlewareKind, c :: ctx.Ctx) -> PreResult {
   match kind {
     MwBodyLimit(max) => if str.len(c.body) > max {
@@ -143,13 +176,24 @@ fn preflight_response(c :: ctx.Ctx, origins :: List[Str]) -> resp.Response {
 
 # ---- Post-middleware pass ----------------------------------------
 # Walk all middlewares in order and thread the Response through
-# each post-step. Logger emits to stdout with a timestamp.
-fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response) -> [io, time, crypto, random] resp.Response {
-  list.fold(mws, response, fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto, random] resp.Response {
-    apply_post(kind, c, r)
+# each post-step. Logger emits to stdout with a timestamp. Built-in
+# variants go through `apply_post`; MwCustom is dispatched directly
+# here so its effectful `after` closure runs under the HEff effect
+# row. Effect row widened from [io, time, crypto, random] → HEff
+# for the same reason.
+fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+  list.fold(mws, response, fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+    match kind {
+      MwCustom(m) => m.after(c, r),
+      _ => apply_post(kind, c, r),
+    }
   })
 }
 
+# Dispatch for built-in middleware variants. MwCustom is reached
+# only via run_post's direct dispatch above — the arm here is a
+# defensive no-op (return response unchanged) in case anyone calls
+# apply_post with an MwCustom value out of band.
 fn apply_post(kind :: MiddlewareKind, c :: ctx.Ctx, response :: resp.Response) -> [io, time, crypto, random] resp.Response {
   match kind {
     MwCors(origins) => {
@@ -179,6 +223,7 @@ fn apply_post(kind :: MiddlewareKind, c :: ctx.Ctx, response :: resp.Response) -
     },
     MwBodyLimit(_) => response,
     MwTrustedHost(_) => response,
+    MwCustom(_) => response,
   }
 }
 

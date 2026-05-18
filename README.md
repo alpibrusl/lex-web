@@ -18,7 +18,7 @@ runner, `lex fmt`, and `Iter[T]` lazy streaming.
 | `src/ctx.lex`           | `Ctx` — enriched request context (path params, query, headers, cookies) |
 | `src/response.lex`      | Response builders (`json`, `text`, `html`, `created`, `not_found`, `problem`, …) |
 | `src/router.lex`        | Route table + dispatcher; `RouteMeta` for tags / summary / status; `attach_meta`, `route_with_meta` |
-| `src/middleware.lex`    | `MwCors` (with OPTIONS preflight), `MwBodyLimit`, `MwRequestId`, `MwLogger`, `MwGzip`, `MwTrustedHost` |
+| `src/middleware.lex`    | `MwCors` (with OPTIONS preflight), `MwBodyLimit`, `MwRequestId`, `MwLogger`, `MwGzip`, `MwTrustedHost`, `MwCustom` (user-defined hooks — #27) |
 | `src/body.lex`          | `json_body`, `require_json_body`, `form_body`, `form_body_raw`, `raw_body` |
 | `src/openapi.lex`       | Auto-generates OpenAPI 3.1 — tags, summaries, descriptions, operationIds, per-route success status |
 | `src/ws.lex`            | WebSocket server — `serve()`, path helpers, frame helpers |
@@ -51,6 +51,7 @@ closest to what you're building.
 | `url_shortener.lex` | POST /api/links + 302 redirects + click stats + Swagger UI | `sub_router`, `params`, `exceptions`, `background`, `docs`, `lifespan` |
 | `jsonrpc_ws.lex` | JSON-RPC 2.0 over WebSocket on `:9000`, browser console on `:8080` | `ws`, `router`, lex-schema `json_value` |
 | `webhook_receiver.lex` | Signed webhook ingestion with idempotency dedup + background processing | `depends.bind`, `exceptions`, `background`, `params.header_str`, RFC 7807 |
+| `middleware_custom.lex` | Bearer-token gate + response-stamping via `mw.custom` | `middleware.custom` (#27) |
 
 Run any of them with `lex run --allow-effects io,net,time examples/<file> main`
 (some need additional effects — each file's header comment carries the exact
