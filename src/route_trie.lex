@@ -26,32 +26,42 @@
 #
 # ---- HandlerBody — pure / effectful handler shape -----------------
 #
-# Route handlers come in two shapes:
+# Route handlers come in three shapes:
 #
-#   HPure  ::  (Ctx) -> Response                            — registered via router.route
-#   HEff   ::  (Ctx) -> [io, time, crypto, random, sql, fs_read,
-#                        fs_write, net, concurrent] Response   — via router.route_effectful
+#   HPure   ::  (Ctx) -> Response                            — registered via router.route
+#   HEff    ::  (Ctx) -> [io, time, crypto, random, sql, fs_read,
+#                         fs_write, net, concurrent] Response  — via router.route_effectful
+#   HStream ::  (Ctx) -> [io, time, crypto, random, sql, fs_read,
+#                         fs_write, net, concurrent] StreamResponse
+#                         — via router.route_stream (#29). Always
+#                         effectful — pure stream handlers are rare
+#                         (typically pull from a queue / DB / clock)
+#                         and the wide row lets the body narrow
+#                         per the agent-guidelines.
 #
 # Each variant carries an `Option[v.Validator]` as a second positional
-# field — the `response_model` from RouteMeta (#28). `None` means no
-# output validation / field filtering; `Some(validator)` causes
-# `router.dispatch` to project the handler's response body through
-# `v.serialize` before sending, stripping unknown fields per the
-# schema's allowlist and 500-ing on validation failure. Bundled into
-# HandlerBody so the trie's `Map[Str, HandlerBody]` stays the
-# single source of truth for dispatch — no parallel meta map and
+# field — the `response_model` from RouteMeta (#28). For `HStream`
+# the response_model is currently NOT enforced (the body is a lazy
+# iterator; we can't validate ahead-of-time without forcing it,
+# which would defeat the streaming property). v1 stores the value
+# for consistency / OpenAPI emit but treats it as a no-op at
+# dispatch time. Same `None` semantics as HPure/HEff.
+#
+# Bundled into HandlerBody so the trie's `Map[Str, HandlerBody]` stays
+# the single source of truth for dispatch — no parallel meta map and
 # no second lookup on the hot path.
 #
 # Lex's effect rows are invariant — a pure handler cannot widen
 # to an effectful function type — and effect-row variables on record
-# fields aren't a thing in 0.9.4, so the two shapes are kept in a
+# fields aren't a thing in 0.9.4, so the variants stay in a
 # tagged-union here and the trie stores `HandlerBody` at terminal
-# nodes. `dispatch` matches the variant; `dispatch_pure` honours
-# only `HPure`. The wide effect set on `HEff` is intentionally
-# generous: narrow the handler *body*, not the type, per the lex
-# agent-guidelines.
+# nodes. `dispatch` matches HPure/HEff (HStream → 500 with a hint);
+# `dispatch_pure` honours only `HPure`; `dispatch_outcome` (#29)
+# matches all three and returns a sum-typed result. The wide effect
+# set on `HEff` / `HStream` is intentionally generous: narrow the
+# handler *body*, not the type, per the lex agent-guidelines.
 
-type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, Option[v.Validator]))
+type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, Option[v.Validator])) | HStream(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse, Option[v.Validator]))
 
 import "std.str" as str
 
@@ -64,6 +74,8 @@ import "lex-schema/validator" as v
 import "./ctx" as ctx
 
 import "./response" as resp
+
+import "./stream" as stream
 
 # A node in the route trie.
 #

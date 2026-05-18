@@ -5,14 +5,12 @@
 #   1. Server-Sent Events via stream.event_stream
 #   2. Signed cookies via crypto.sign / crypto.verify
 #
-# The /events endpoint materialises 5 SSE frames into a single Str
-# body and returns it through the framework. lex-lang 0.9.2 also
-# supports truly-lazy streaming via the `BodyStream(Iter[Str])`
-# ResponseBody union — see `bench/servers/lex_web_bench_stream.lex`
-# for the lazy-pull variant. lex-web's `resp.Response` still has
-# `body :: Str`, so any handler that returns through the router
-# materialises; bypass the router and return `BodyStream(...)`
-# directly at the `net.serve_fn` boundary for true streaming.
+# Streaming routes flow through `router.dispatch_outcome` (#29) —
+# `route_stream` registers a handler returning `stream.StreamResponse`,
+# the dispatcher returns `DStream(...)`, and the `main` bridge wraps
+# the lazy iterator in `BodyStream(...)` for `net.serve_fn`. No
+# materialisation: the iterator is pulled chunk-by-chunk as the
+# client reads.
 #
 # Run:
 #   lex run --allow-effects io,net,time,crypto,random,sql,fs_read,fs_write,concurrent \
@@ -53,13 +51,17 @@ fn secret() -> Str {
 
 # ---- Handlers ----------------------------------------------------
 # GET /events — SSE stream of 5 counter ticks as JSON objects.
-# In a real app the iterator would tail a database or message queue.
-fn events(c :: ctx.Ctx) -> resp.Response {
+# Returns a `stream.StreamResponse` whose body is a lazy
+# `Iter[Str]`; the router dispatches it as DStream(...) through
+# `dispatch_outcome`, the bridge wraps it in `BodyStream(...)` for
+# `net.serve_fn`, and the runtime emits chunks as the client reads
+# (no buffering). In a real app the iterator would tail a database
+# or message queue.
+fn events(_c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse {
   let frames := list.map(list.range(0, 5), fn (n :: Int) -> Str {
     stream.sse_event(str.concat("{\"tick\":", str.concat(int.to_str(n), "}")))
   })
-  let sr := stream.event_stream(iter.from_list(frames))
-  { body: str.join(frames, ""), status: sr.status, headers: sr.headers }
+  stream.event_stream(iter.from_list(frames))
 }
 
 # POST /login — issue a signed cookie carrying the username.
@@ -102,7 +104,7 @@ fn health(c :: ctx.Ctx) -> resp.Response {
 # ---- App ---------------------------------------------------------
 fn app() -> router.Router {
   (((router.new() |> fn (r :: router.Router) -> router.Router {
-    router.route(r, "GET", "/events", events)
+    router.route_stream(r, "GET", "/events", events)
   }) |> fn (r :: router.Router) -> router.Router {
     router.route(r, "POST", "/login", login)
   }) |> fn (r :: router.Router) -> router.Router {
@@ -112,10 +114,17 @@ fn app() -> router.Router {
   }
 }
 
+# Bridge `Request` / `Response` (lex-lang globals) ←→ `RawRequest`
+# / `resp.Response` (lex-web's local records). The match on
+# `DispatchOutcome` is the #29 contract: `DPlain` → `BodyStr`,
+# `DStream` → `BodyStream` for true zero-copy streaming on the
+# wire.
 fn handle(req :: Request) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Response {
   let raw := { body: req.body, method: req.method, path: req.path, query: req.query, headers: req.headers }
-  let r := router.dispatch(app(), raw)
-  { status: r.status, body: BodyStr(r.body), headers: r.headers }
+  match router.dispatch_outcome(app(), raw) {
+    DPlain(r) => { status: r.status, body: BodyStr(r.body), headers: r.headers },
+    DStream(s) => { status: s.status, body: BodyStream(s.body), headers: s.headers },
+  }
 }
 
 fn main() -> [net, io, time, crypto, random, sql, fs_read, fs_write, concurrent] Unit {

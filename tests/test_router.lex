@@ -6,11 +6,17 @@ import "std.str" as str
 
 import "std.map" as map
 
+import "std.iter" as iter
+
 import "../src/ctx" as ctx
 
 import "../src/response" as resp
 
 import "../src/router" as router
+
+import "../src/middleware" as mw
+
+import "../src/stream" as strm
 
 import "../src/test_fixtures" as fx
 
@@ -239,9 +245,92 @@ fn no_response_model_means_passthrough() -> Result[Unit, Str] {
   }
 }
 
+# ---- route_stream / dispatch_outcome (#29) -----------------------
+#
+# Streaming handlers return a `stream.StreamResponse` whose body
+# is a lazy `Iter[Str]`. The router routes them through
+# `dispatch_outcome` which returns `DispatchOutcome` —
+# `DPlain(Response)` for HPure/HEff routes, `DStream(StreamResponse)`
+# for HStream routes. The caller's bridge matches the outcome and
+# picks the right `BodyStr` / `BodyStream` wrapping for net.serve_fn.
+fn tick_stream(_c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] strm.StreamResponse {
+  let frames := list.map(list.range(0, 3), fn (n :: Int) -> Str {
+    strm.sse_event(str.concat("tick-", str.concat(str.to_lower("X"), "")))
+  })
+  strm.event_stream(iter.from_list(frames))
+}
+
+fn plain_handler(_c :: ctx.Ctx) -> resp.Response {
+  resp.text("hello")
+}
+
+fn stream_router() -> router.Router {
+  (router.new() |> fn (r :: router.Router) -> router.Router {
+    router.route_stream(r, "GET", "/events", tick_stream)
+  }) |> fn (r :: router.Router) -> router.Router {
+    router.route(r, "GET", "/plain", plain_handler)
+  }
+}
+
+fn dispatch_outcome_routes_stream_to_dstream() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+  match router.dispatch_outcome(stream_router(), t.get("/events")) {
+    DStream(sr) => if sr.status == 200 {
+      Ok(())
+    } else {
+      Err(str.concat("expected status 200 on stream, got ", str.to_lower("?")))
+    },
+    DPlain(_) => Err("expected DStream for a route_stream-registered handler"),
+  }
+}
+
+fn dispatch_outcome_routes_plain_to_dplain() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+  match router.dispatch_outcome(stream_router(), t.get("/plain")) {
+    DPlain(r) => t.assert_body_eq(r, "hello"),
+    DStream(_) => Err("expected DPlain for a plain route_handler"),
+  }
+}
+
+fn dispatch_outcome_unmatched_is_dplain_404() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+  match router.dispatch_outcome(stream_router(), t.get("/missing")) {
+    DPlain(r) => t.assert_status(r, 404),
+    DStream(_) => Err("expected DPlain(404) for an unmatched path"),
+  }
+}
+
+# `dispatch` (the plain dispatcher) 500s on HStream routes with a
+# clear hint pointing callers at `dispatch_outcome`. This is the
+# fall-back behaviour; mixed apps should use dispatch_outcome.
+fn legacy_dispatch_500s_on_stream_route() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+  let out := router.dispatch(stream_router(), t.get("/events"))
+  if out.status == 500 and str.contains(out.body, "dispatch_outcome") {
+    Ok(())
+  } else {
+    Err(str.concat("expected 500 + dispatch_outcome hint, got: ", out.body))
+  }
+}
+
+# Post-handler middleware mutates the stream's status/headers via
+# the stub-response shim; the body iterator passes through
+# untouched. MwRequestId stamps `x-request-id` on the response,
+# which means stream responses also get the trace ID.
+fn stream_post_middleware_stamps_headers() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+  let r := (router.new() |> fn (rr :: router.Router) -> router.Router {
+    router.use_mw(rr, mw.request_id())
+  }) |> fn (rr :: router.Router) -> router.Router {
+    router.route_stream(rr, "GET", "/events", tick_stream)
+  }
+  match router.dispatch_outcome(r, t.get("/events")) {
+    DStream(sr) => match map.get(sr.headers, "x-request-id") {
+      Some(_) => Ok(()),
+      None => Err("expected MwRequestId to stamp x-request-id on the stream response"),
+    },
+    DPlain(_) => Err("expected DStream for /events"),
+  }
+}
+
 # ---- Suite -------------------------------------------------------
-fn suite() -> List[Result[Unit, Str]] {
-  [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end(), response_model_filters_unknown_fields(), response_model_500s_on_missing_required_field(), response_model_500s_on_unparseable_body(), no_response_model_means_passthrough()]
+fn suite() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
+  [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end(), response_model_filters_unknown_fields(), response_model_500s_on_missing_required_field(), response_model_500s_on_unparseable_body(), no_response_model_means_passthrough(), dispatch_outcome_routes_stream_to_dstream(), dispatch_outcome_routes_plain_to_dplain(), dispatch_outcome_unmatched_is_dplain_404(), legacy_dispatch_500s_on_stream_route(), stream_post_middleware_stamps_headers()]
 }
 
 # `lex test` calls run_all and reports the file as failed iff run_all
@@ -249,7 +338,7 @@ fn suite() -> List[Result[Unit, Str]] {
 # (`1 / 0`) when any case failed; the failed Err(_) messages are not
 # surfaced today — `lex test` only reports the panic site — but the
 # panic correctly fails the run.
-fn run_all() -> Unit {
+fn run_all() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Unit {
   let failures := list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
