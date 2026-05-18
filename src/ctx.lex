@@ -19,16 +19,59 @@ import "std.map" as map
 type RawRequest = { body :: Str, method :: Str, path :: Str, query :: Str, headers :: Map[Str, Str] }
 
 # Enriched context threaded through every handler and middleware.
-type Ctx = { method :: Str, path :: Str, query :: Str, body :: Str, path_params :: Map[Str, Str], headers :: Map[Str, Str] }
+# `state` is a per-request scratchpad — handlers and middleware
+# stash strings under named keys so downstream middleware /
+# handlers can read them. FastAPI's `request.state.x` in
+# concept; Str-typed here because Lex doesn't have an "any" type
+# at the framework level. Wrap structured state in JSON via
+# `jv.stringify` if needed; the common case (request-id,
+# user-id, trace context, A/B bucket) is already Str.
+type Ctx = { method :: Str, path :: Str, query :: Str, body :: Str, path_params :: Map[Str, Str], headers :: Map[Str, Str], state :: Map[Str, Str] }
 
 # Build a Ctx from the raw request + the param bindings the
-# router extracted during segment matching.
+# router extracted during segment matching. `state` starts empty;
+# middleware populates it via `set_state` for downstream stages.
 fn from_request(req :: RawRequest, params :: Map[Str, Str]) -> Ctx {
-  { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: req.headers }
+  { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: req.headers, state: map.new() }
 }
 
 fn from_request_with_headers(req :: RawRequest, params :: Map[Str, Str], hdrs :: Map[Str, Str]) -> Ctx {
-  { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: hdrs }
+  { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: hdrs, state: map.new() }
+}
+
+# ---- State bag --------------------------------------------------
+#
+# Cross-handler / cross-middleware data sharing. Set in a pre-
+# middleware hook, read in a handler or post-middleware hook.
+# Returns a NEW Ctx — Lex values are immutable, so callers thread
+# the updated Ctx through their dispatch chain:
+#
+#   match mw_auth.verify(c) {
+#     Err(r)     => Short(r),
+#     Ok(user)   => Continue(ctx.set_state(c, "user-id", user.id)),
+#   }
+#
+# Later in the handler:
+#
+#   match ctx.get_state(c, "user-id") {
+#     Some(uid) => greet(uid),
+#     None      => resp.bad_request("auth middleware did not set user-id"),
+#   }
+fn set_state(c :: Ctx, key :: Str, value :: Str) -> Ctx {
+  { method: c.method, path: c.path, query: c.query, body: c.body, path_params: c.path_params, headers: c.headers, state: map.set(c.state, key, value) }
+}
+
+fn get_state(c :: Ctx, key :: Str) -> Option[Str] {
+  map.get(c.state, key)
+}
+
+# Read state with a default. Convenience for the common
+# "use this value if middleware set it, fall back otherwise" case.
+fn get_state_or(c :: Ctx, key :: Str, default :: Str) -> Str {
+  match map.get(c.state, key) {
+    Some(v) => v,
+    None => default,
+  }
 }
 
 # ---- Path-param accessors ----------------------------------------
