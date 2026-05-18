@@ -57,19 +57,37 @@ import "./route_trie" as rt
 
 import "lex-schema/validator" as v
 
+import "lex-schema/json_value" as jv
+
 # ---- Per-route metadata -----------------------------------------
 # Optional descriptors that ride along on each route. The router
 # never inspects them; they exist for openapi.export_openapi (and
 # any future introspection tool).
 #
-#   tags         — OpenAPI tags for grouping in Swagger UI
-#   summary      — short title shown in the operation list
-#   description  — long-form Markdown for the operation
-#   status       — default success status (0 = leave unset, use 200)
-type RouteMeta = { tags :: List[Str], summary :: Str, description :: Str, status :: Int }
+#   tags           — OpenAPI tags for grouping in Swagger UI
+#   summary        — short title shown in the operation list
+#   description    — long-form Markdown for the operation
+#   status         — default success status (0 = leave unset, use 200)
+#   response_model — optional lex-schema Validator applied to the
+#                    handler's response body before sending (#28).
+#                    Validates the JSON conforms to the schema AND
+#                    strips fields not declared in the schema — the
+#                    "filter internal fields like password_hash from
+#                    a User response" pattern FastAPI's
+#                    `response_model=` exposes. On validation
+#                    failure the framework replaces the response with
+#                    a 500. None = no response-side processing.
+type RouteMeta = { tags :: List[Str], summary :: Str, description :: Str, status :: Int, response_model :: Option[v.Validator] }
 
 fn empty_meta() -> RouteMeta {
-  { tags: [], summary: "", description: "", status: 0 }
+  { tags: [], summary: "", description: "", status: 0, response_model: None }
+}
+
+# Convenience builder for the common "I just want a response_model"
+# case. `meta.empty_meta() |> with_response_model(v)` keeps the
+# `attach_meta(...)` call site one line.
+fn with_response_model(m :: RouteMeta, validator :: v.Validator) -> RouteMeta {
+  { tags: m.tags, summary: m.summary, description: m.description, status: m.status, response_model: Some(validator) }
 }
 
 # ---- Types -------------------------------------------------------
@@ -95,7 +113,7 @@ fn compile_trie(records :: List[RouteRecord]) -> rt.TrieNode {
 # Register a pure handler. Handler must be `(Ctx) -> Response` —
 # no effects allowed. Use this for the 95% case.
 fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response) -> Router {
-  add_record(r, method, pattern, HPure(handler), None, empty_meta())
+  add_record(r, method, pattern, HPure(handler, None), None, empty_meta())
 }
 
 # Register an effectful handler. Handler must declare its effects
@@ -105,19 +123,19 @@ fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> res
 # the WS outbound bridge actors registered by serve_ws_fn_actor
 # (lex-lang 0.9.5) via conc.lookup + conc.tell.
 fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
-  add_record(r, method, pattern, HEff(handler), None, empty_meta())
+  add_record(r, method, pattern, HEff(handler, None), None, empty_meta())
 }
 
 # Register a pure route with an attached lex-schema Validator. The
 # validator is used at runtime by body.json_body() and at startup by
 # openapi.export_openapi() to emit request-body schemas.
 fn handler_json(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> resp.Response) -> Router {
-  add_record(r, method, pattern, HPure(handler), Some(validator), empty_meta())
+  add_record(r, method, pattern, HPure(handler, None), Some(validator), empty_meta())
 }
 
 # Effectful variant of handler_json.
 fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
-  add_record(r, method, pattern, HEff(handler), Some(validator), empty_meta())
+  add_record(r, method, pattern, HEff(handler, None), Some(validator), empty_meta())
 }
 
 # Add a middleware to the stack. Middlewares run in registration
@@ -135,32 +153,40 @@ fn add_record(r :: Router, method :: Str, pattern :: Str, body :: rt.HandlerBody
 }
 
 # ---- Metadata attachment -----------------------------------------
+# Update the meta for an existing route. Also re-bundles
+# `meta.response_model` into the route's HandlerBody so the trie
+# (which dispatch consults on the hot path) stays in sync, then
+# rebuilds the trie from the updated record list.
 fn attach_meta(r :: Router, method :: Str, pattern :: Str, meta :: RouteMeta) -> Router {
   let m := str.to_upper(method)
   let updated := list.map(r.routes, fn (rec :: RouteRecord) -> RouteRecord {
     if rec.method == m and rec.pattern == pattern {
-      { method: rec.method, pattern: rec.pattern, segments: rec.segments, body: rec.body, validator: rec.validator, meta: meta }
+      let new_body := match rec.body {
+        HPure(h, _) => HPure(h, meta.response_model),
+        HEff(h, _) => HEff(h, meta.response_model),
+      }
+      { method: rec.method, pattern: rec.pattern, segments: rec.segments, body: new_body, validator: rec.validator, meta: meta }
     } else {
       rec
     }
   })
-  { routes: updated, middleware: r.middleware, trie: r.trie }
+  { routes: updated, middleware: r.middleware, trie: compile_trie(updated) }
 }
 
 fn route_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response, meta :: RouteMeta) -> Router {
-  add_record(r, method, pattern, HPure(handler), None, meta)
+  add_record(r, method, pattern, HPure(handler, meta.response_model), None, meta)
 }
 
 fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
-  add_record(r, method, pattern, HEff(handler), None, meta)
+  add_record(r, method, pattern, HEff(handler, meta.response_model), None, meta)
 }
 
 fn handler_json_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> resp.Response, meta :: RouteMeta) -> Router {
-  add_record(r, method, pattern, HPure(handler), Some(validator), meta)
+  add_record(r, method, pattern, HPure(handler, meta.response_model), Some(validator), meta)
 }
 
 fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
-  add_record(r, method, pattern, HEff(handler), Some(validator), meta)
+  add_record(r, method, pattern, HEff(handler, meta.response_model), Some(validator), meta)
 }
 
 # ---- Dispatch ----------------------------------------------------
@@ -202,8 +228,8 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
       }
       let c := ctx.from_request(req, params)
       match body {
-        HPure(h) => h(c),
-        HEff(_) => resp.with_ct(500, "lex-web: this route was registered via route_effectful and cannot be invoked from dispatch_pure. Use dispatch with --allow-effects, or restrict the route to a pure handler.", "text/plain"),
+        HPure(h, rm) => apply_response_model(h(c), rm),
+        HEff(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_effectful and cannot be invoked from dispatch_pure. Use dispatch with --allow-effects, or restrict the route to a pure handler.", "text/plain"),
       }
     },
   }
@@ -239,15 +265,48 @@ fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c 
 # Trie-driven dispatch path: we only have the body variant, not
 # the full RouteRecord. run_with_middleware_h is the workhorse;
 # run_with_middleware stays as a thin shim for the list.fold path.
+#
+# Response-model post-processing (#28) runs between the handler
+# and `run_post` — so post-middleware sees the validated/filtered
+# body, not the raw handler output. A short-circuiting pre-middleware
+# return skips the handler AND the response_model step (there's no
+# handler-output to validate); that matches "the gate fired, what
+# the handler would have returned is irrelevant".
 fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   match mw.run_pre(mws, c) {
     Short(early) => mw.run_post(mws, c, early),
     Continue(c2) => {
       let raw_resp := match body {
-        HPure(h) => h(c2),
-        HEff(h) => h(c2),
+        HPure(h, rm) => apply_response_model(h(c2), rm),
+        HEff(h, rm) => apply_response_model(h(c2), rm),
       }
       mw.run_post(mws, c2, raw_resp)
+    },
+  }
+}
+
+# Response-model post-processor (#28). For routes registered with
+# `route_with_meta(..., empty_meta() |> with_response_model(v))`,
+# project the handler's response body through `v.serialize`:
+#   - parses the body as JSON
+#   - runs the schema validator (rejects missing required fields,
+#     bad types, etc.)
+#   - re-stringifies, silently dropping any fields not declared on
+#     the schema — the "strip password_hash from a User response"
+#     filtering behaviour FastAPI's response_model= exposes
+# On validation failure the response is replaced with a 500 carrying
+# the structured error list as JSON. The post-middleware chain
+# (logger, CORS, request-id, etc.) runs over the *replaced* response,
+# matching the standard "framework owns the 500 shape" contract.
+fn apply_response_model(response :: resp.Response, rm :: Option[v.Validator]) -> resp.Response {
+  match rm {
+    None => response,
+    Some(validator) => match v.validate_str(validator, response.body) {
+      Err(_) => {
+        let body := "{\"error\":\"response_model: handler returned data that does not conform to the declared schema\"}"
+        { body: body, status: 500, headers: map.set(response.headers, "content-type", "application/json") }
+      },
+      Ok(j) => { body: jv.stringify(j), status: response.status, headers: response.headers },
     },
   }
 }

@@ -58,19 +58,19 @@ fn new(prefix :: Str, tags :: List[Str]) -> SubRouter {
 }
 
 fn route(r :: SubRouter, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> resp.Response) -> SubRouter {
-  add(r, mk_sub_route(method, pattern, HPure(handler), None, "", "", 0))
+  add(r, mk_sub_route(method, pattern, HPure(handler, None), None, "", "", 0))
 }
 
 fn route_effectful(r :: SubRouter, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> SubRouter {
-  add(r, mk_sub_route(method, pattern, HEff(handler), None, "", "", 0))
+  add(r, mk_sub_route(method, pattern, HEff(handler, None), None, "", "", 0))
 }
 
 fn handler_json(r :: SubRouter, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> resp.Response) -> SubRouter {
-  add(r, mk_sub_route(method, pattern, HPure(handler), Some(validator), "", "", 0))
+  add(r, mk_sub_route(method, pattern, HPure(handler, None), Some(validator), "", "", 0))
 }
 
 fn handler_json_effectful(r :: SubRouter, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> SubRouter {
-  add(r, mk_sub_route(method, pattern, HEff(handler), Some(validator), "", "", 0))
+  add(r, mk_sub_route(method, pattern, HEff(handler, None), Some(validator), "", "", 0))
 }
 
 # Annotate the most-recently-added route with summary / description
@@ -154,7 +154,7 @@ fn mount(main :: router.Router, sub :: SubRouter) -> router.Router {
     let full := join_path(sub.prefix, sr.pattern)
     let merged_tags := dedup_concat(sub.tags, sr.tags)
     let stage1 := router.add_record(acc, sr.method, full, sr.body, sr.validator, router.empty_meta())
-    router.attach_meta(stage1, sr.method, full, { tags: merged_tags, summary: sr.summary, description: sr.description, status: sr.status })
+    router.attach_meta(stage1, sr.method, full, { tags: merged_tags, summary: sr.summary, description: sr.description, status: sr.status, response_model: None })
   })
 }
 

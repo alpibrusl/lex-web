@@ -12,6 +12,8 @@ import "../src/response" as resp
 
 import "../src/router" as router
 
+import "../src/test_fixtures" as fx
+
 import "../src/testing" as t
 
 # ---- Shared fixtures --------------------------------------------
@@ -175,9 +177,71 @@ fn literal_falls_back_to_param_on_dead_end() -> Result[Unit, Str] {
   t.all([t.assert_body_eq(router.dispatch_pure(r, t.get("/users/admin")), "admin-home"), t.assert_body_eq(router.dispatch_pure(r, t.get("/users/admin/profile")), "admin-profile")])
 }
 
+# ---- RouteMeta.response_model (#28) ------------------------------
+# `fx.item_validator()` is `{ name :: Str (non-empty), qty :: Int (positive) }`.
+# Handler returns a body conforming to the schema PLUS extra fields
+# (`internal_id`, `secret`). The framework should validate against
+# the schema (success) and project the body down to just the
+# declared fields — `internal_id` and `secret` should NOT appear
+# in the wire response.
+fn handler_with_extras(_c :: ctx.Ctx) -> resp.Response {
+  resp.json("{\"name\":\"widget\",\"qty\":5,\"internal_id\":\"sku-001\",\"secret\":\"do-not-leak\"}")
+}
+
+# Handler returns a body that's MISSING the `qty` required field —
+# the framework should reject this with a 500 because the handler's
+# output doesn't conform to the declared response model.
+fn handler_missing_field(_c :: ctx.Ctx) -> resp.Response {
+  resp.json("{\"name\":\"widget\"}")
+}
+
+fn handler_garbage(_c :: ctx.Ctx) -> resp.Response {
+  resp.json("not even json")
+}
+
+fn router_with_response_model(handler :: (ctx.Ctx) -> resp.Response) -> router.Router {
+  let meta := router.with_response_model(router.empty_meta(), fx.item_validator())
+  router.route_with_meta(router.new(), "GET", "/item", handler, meta)
+}
+
+fn response_model_filters_unknown_fields() -> Result[Unit, Str] {
+  let r := router_with_response_model(handler_with_extras)
+  let out := router.dispatch_pure(r, t.get("/item"))
+  if str.contains(out.body, "\"name\":\"widget\"") and str.contains(out.body, "\"qty\":5") and not str.contains(out.body, "internal_id") and not str.contains(out.body, "secret") {
+    Ok(())
+  } else {
+    Err(str.concat("expected filtered body without internal_id/secret, got: ", out.body))
+  }
+}
+
+fn response_model_500s_on_missing_required_field() -> Result[Unit, Str] {
+  let r := router_with_response_model(handler_missing_field)
+  let out := router.dispatch_pure(r, t.get("/item"))
+  t.assert_status(out, 500)
+}
+
+fn response_model_500s_on_unparseable_body() -> Result[Unit, Str] {
+  let r := router_with_response_model(handler_garbage)
+  let out := router.dispatch_pure(r, t.get("/item"))
+  t.assert_status(out, 500)
+}
+
+# Without response_model, the body passes through unchanged —
+# extra fields stay, malformed JSON is the handler's problem,
+# not the framework's.
+fn no_response_model_means_passthrough() -> Result[Unit, Str] {
+  let r := router.route(router.new(), "GET", "/item", handler_with_extras)
+  let out := router.dispatch_pure(r, t.get("/item"))
+  if str.contains(out.body, "internal_id") and str.contains(out.body, "secret") {
+    Ok(())
+  } else {
+    Err(str.concat("expected raw passthrough including extras, got: ", out.body))
+  }
+}
+
 # ---- Suite -------------------------------------------------------
 fn suite() -> List[Result[Unit, Str]] {
-  [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end()]
+  [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end(), response_model_filters_unknown_fields(), response_model_500s_on_missing_required_field(), response_model_500s_on_unparseable_body(), no_response_model_means_passthrough()]
 }
 
 # `lex test` calls run_all and reports the file as failed iff run_all

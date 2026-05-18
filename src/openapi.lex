@@ -104,8 +104,8 @@ fn build_path_item(routes :: List[router.RouteRecord]) -> jv.Json {
 fn build_operation(rec :: router.RouteRecord) -> jv.Json {
   let params := path_params_from_pattern(rec.pattern)
   let responses := match rec.meta.status {
-    0 => default_responses(),
-    s => responses_with_success(s),
+    0 => default_responses(rec.meta.response_model),
+    s => responses_with_success(s, rec.meta.response_model),
   }
   let base := [("operationId", JStr(operation_id(rec))), ("parameters", JList(params)), ("responses", responses)]
   let with_summary := if str.is_empty(rec.meta.summary) {
@@ -209,15 +209,30 @@ fn path_param_obj(name :: Str) -> jv.Json {
 
 # ---- Default responses -------------------------------------------
 # Every operation gets a minimal responses object. Routes can
-# annotate richer response schemas via RouteMeta.status.
-fn default_responses() -> jv.Json {
-  JObj([("200", JObj([("description", JStr("OK"))])), ("400", JObj([("description", JStr("Bad Request"))])), ("422", JObj([("description", JStr("Validation Error"))])), ("500", JObj([("description", JStr("Internal Server Error"))]))])
+# annotate richer response schemas via RouteMeta.status and
+# RouteMeta.response_model (#28). When response_model is set, the
+# success-status response object gains a `content.application/json.schema`
+# referencing the validator's pre-computed openapi_response fragment.
+fn default_responses(response_model :: Option[v.Validator]) -> jv.Json {
+  JObj([("200", success_response("OK", response_model)), ("400", JObj([("description", JStr("Bad Request"))])), ("422", JObj([("description", JStr("Validation Error"))])), ("500", JObj([("description", JStr("Internal Server Error"))]))])
 }
 
-fn responses_with_success(status :: Int) -> jv.Json {
+fn responses_with_success(status :: Int, response_model :: Option[v.Validator]) -> jv.Json {
   let success_key := int.to_str(status)
   let success_desc := description_for(status)
-  JObj([(success_key, JObj([("description", JStr(success_desc))])), ("400", JObj([("description", JStr("Bad Request"))])), ("422", JObj([("description", JStr("Validation Error"))])), ("500", JObj([("description", JStr("Internal Server Error"))]))])
+  JObj([(success_key, success_response(success_desc, response_model)), ("400", JObj([("description", JStr("Bad Request"))])), ("422", JObj([("description", JStr("Validation Error"))])), ("500", JObj([("description", JStr("Internal Server Error"))]))])
+}
+
+# Build the success-status response object. With no response_model
+# it's the minimal `{description}`; with one it gains a content
+# entry whose schema is the validator's pre-computed
+# `openapi_response` fragment (lex-schema bundles this at Validator
+# construction time, same way it bundles `openapi` for requests).
+fn success_response(desc :: Str, response_model :: Option[v.Validator]) -> jv.Json {
+  match response_model {
+    None => JObj([("description", JStr(desc))]),
+    Some(validator) => JObj([("description", JStr(desc)), ("content", JObj([("application/json", JObj([("schema", validator.openapi_response)]))]))]),
+  }
 }
 
 fn description_for(status :: Int) -> Str {
