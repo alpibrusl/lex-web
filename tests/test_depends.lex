@@ -109,9 +109,62 @@ fn test_pure_lifts() -> Result[Unit, Str] {
   }
 }
 
+# ---- cached_str -------------------------------------------------
+# Counter so we can observe whether the fallback ran. Lex doesn't
+# have mutable state directly, but we can use a `conc` actor or
+# (simpler for a test) a closure over a List wrapper. The
+# cleanest test shape: track WHICH branch fired via the value
+# returned, so we don't need a counter.
+#
+# Fallback dep that always returns Ok("computed"). If the cache
+# hits, this never runs; cached_str returns Ok("from-state").
+fn fallback_computed(_c :: ctx.Ctx) -> Result[Str, resp.Response] {
+  Ok("computed")
+}
+
+fn fallback_errors(_c :: ctx.Ctx) -> Result[Str, resp.Response] {
+  Err(resp.bad_request("fallback ran"))
+}
+
+fn cached_str_hits_state_when_present() -> Result[Unit, Str] {
+  let c := ctx.set_state(ctx.from_request({ method: "GET", path: "/", body: "", query: "", headers: map.new() }, map.new()), "user-id", "from-state")
+  match depends.cached_str(c, "user-id", fallback_errors) {
+    Ok(v) => if v == "from-state" {
+      Ok(())
+    } else {
+      Err(str.concat("got: ", v))
+    },
+    Err(_) => Err("fallback ran despite state hit"),
+  }
+}
+
+fn cached_str_runs_fallback_on_miss() -> Result[Unit, Str] {
+  let c := ctx.from_request({ method: "GET", path: "/", body: "", query: "", headers: map.new() }, map.new())
+  match depends.cached_str(c, "missing", fallback_computed) {
+    Ok(v) => if v == "computed" {
+      Ok(())
+    } else {
+      Err(str.concat("got: ", v))
+    },
+    Err(_) => Err("fallback errored"),
+  }
+}
+
+# cached_str does NOT write the fallback's result to state — Lex
+# Ctx is immutable from the dep's perspective. A second call with
+# the same name still hits the fallback (no auto-write-back).
+fn cached_str_does_not_write_back_to_state() -> Result[Unit, Str] {
+  let c := ctx.from_request({ method: "GET", path: "/", body: "", query: "", headers: map.new() }, map.new())
+  let _first := depends.cached_str(c, "k", fallback_computed)
+  match ctx.get_state(c, "k") {
+    None => Ok(()),
+    Some(_) => Err("cached_str unexpectedly wrote to state"),
+  }
+}
+
 # ---- Suite -------------------------------------------------------
 fn suite() -> List[Result[Unit, Str]] {
-  [test_inject1_ok(), test_inject1_short_circuits(), test_inject2_ok(), test_inject2_first_fails(), test_bind_chains(), test_map_passes_err(), test_pure_lifts()]
+  [test_inject1_ok(), test_inject1_short_circuits(), test_inject2_ok(), test_inject2_first_fails(), test_bind_chains(), test_map_passes_err(), test_pure_lifts(), cached_str_hits_state_when_present(), cached_str_runs_fallback_on_miss(), cached_str_does_not_write_back_to_state()]
 }
 
 fn run_all() -> Unit {
