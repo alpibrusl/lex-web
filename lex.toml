@@ -14,6 +14,6 @@ lex     = "0.9.5"
 # 0.9.2: std.crypto (blake2b, random_str_hex, AEAD, KDF), std.time extensions
 #        (now_str, now_ms, mono_ns), streaming ResponseBody, iter.unfold.
 [dependencies]
-lex-schema = { git = "https://github.com/alpibrusl/lex-schema" }
-lex-crypto = { git = "https://github.com/alpibrusl/lex-crypto" }
-lex-orm    = { git = "https://github.com/alpibrusl/lex-orm" }
+lex-schema = { path = "../lex-schema" }
+lex-crypto = { path = "../lex-crypto" }
+lex-orm    = { path = "../lex-orm" }
