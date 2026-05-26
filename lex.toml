@@ -17,3 +17,4 @@ lex     = "0.9.5"
 lex-schema = { path = "../lex-schema" }
 lex-crypto = { path = "../lex-crypto" }
 lex-orm    = { path = "../lex-orm" }
+lex-log    = { path = "../lex-log" }

@@ -152,7 +152,7 @@ fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> res
 # declaration. `concurrent` is in the set so handlers can drive
 # the WS outbound bridge actors registered by serve_ws_fn_actor
 # (lex-lang 0.9.5) via conc.lookup + conc.tell.
-fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
+fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
   add_record(r, method, pattern, HEff(handler, None), None, empty_meta())
 }
 
@@ -164,7 +164,7 @@ fn handler_json(r :: Router, method :: Str, pattern :: Str, validator :: v.Valid
 }
 
 # Effectful variant of handler_json.
-fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
+fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
   add_record(r, method, pattern, HEff(handler, None), Some(validator), empty_meta())
 }
 
@@ -181,7 +181,7 @@ fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator 
 # `route_effectful` so handlers can pull from a database, an
 # actor, or the file system to source chunks. Narrow the body,
 # not the type.
-fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse) -> Router {
+fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse) -> Router {
   add_record(r, method, pattern, HStream(handler, None), None, empty_meta())
 }
 
@@ -189,7 +189,7 @@ fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx)
 # (tags / summary / description) on a stream route. response_model
 # is accepted for symmetry but NOT enforced on stream routes in
 # v1 — see route_trie.lex for the rationale.
-fn route_stream_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse, meta :: RouteMeta) -> Router {
+fn route_stream_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HStream(handler, meta.response_model), None, meta)
 }
 
@@ -233,7 +233,7 @@ fn route_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.C
   add_record(r, method, pattern, HPure(handler, meta.response_model), None, meta)
 }
 
-fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
+fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HEff(handler, meta.response_model), None, meta)
 }
 
@@ -241,7 +241,7 @@ fn handler_json_with_meta(r :: Router, method :: Str, pattern :: Str, validator 
   add_record(r, method, pattern, HPure(handler, meta.response_model), Some(validator), meta)
 }
 
-fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
+fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HEff(handler, meta.response_model), Some(validator), meta)
 }
 
@@ -250,7 +250,7 @@ fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, 
 # the middleware stack's [io, time, crypto, random]. HPure routes
 # under this dispatcher pay the wider effect row in the call site's
 # declaration but don't actually invoke the wider effects.
-fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match rt.lookup(r.trie, method, path_segs) {
@@ -312,7 +312,7 @@ fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
 # apps want `dispatch_outcome`.
 type DispatchOutcome = DPlain(resp.Response) | DStream(stream.StreamResponse)
 
-fn dispatch_outcome(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] DispatchOutcome {
+fn dispatch_outcome(r :: Router, req :: ctx.RawRequest) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] DispatchOutcome {
   let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match rt.lookup(r.trie, method, path_segs) {
@@ -339,7 +339,7 @@ fn dispatch_outcome(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, ra
 # + headers, then merges the mutated status/headers back into the
 # stream. Body-mutating middleware (gzip annotation, request-id,
 # CORS) all work on the stub; body itself passes through untouched.
-fn run_with_middleware_outcome(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] DispatchOutcome {
+fn run_with_middleware_outcome(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] DispatchOutcome {
   match mw.run_pre(mws, c) {
     Short(early) => DPlain(mw.run_post(mws, c, early)),
     Continue(c2) => match body {
@@ -361,7 +361,7 @@ fn run_with_middleware_outcome(mws :: List[mw.MiddlewareKind], body :: rt.Handle
 # the only difference is route lookup cost (O(N × M) here vs O(M) via
 # the trie). Not used by sub_router / openapi / the public README
 # examples — those go through dispatch.
-fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match find_match(r.routes, method, path_segs) {
@@ -378,7 +378,7 @@ fn dispatch_listfold(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, r
   }
 }
 
-fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c :: ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   run_with_middleware_h(mws, record.body, c)
 }
 
@@ -392,7 +392,7 @@ fn run_with_middleware(mws :: List[mw.MiddlewareKind], record :: RouteRecord, c 
 # return skips the handler AND the response_model step (there's no
 # handler-output to validate); that matches "the gate fired, what
 # the handler would have returned is irrelevant".
-fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody, c :: ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
   match mw.run_pre(mws, c) {
     Short(early) => mw.run_post(mws, c, early),
     Continue(c2) => {

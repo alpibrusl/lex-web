@@ -5,7 +5,7 @@ import "std.list" as list
 import "../src/status" as status
 
 fn test_2xx_constants() -> Result[Unit, Str] {
-  if status.HTTP_200_OK() == 200 and status.HTTP_201_CREATED() == 201 and status.HTTP_204_NO_CONTENT() == 204 {
+  if status.http_200_OK() == 200 and status.http_201_CREATED() == 201 and status.http_204_NO_CONTENT() == 204 {
     Ok(())
   } else {
     Err("2xx constants wrong")
@@ -13,7 +13,7 @@ fn test_2xx_constants() -> Result[Unit, Str] {
 }
 
 fn test_4xx_constants() -> Result[Unit, Str] {
-  if status.HTTP_404_NOT_FOUND() == 404 and status.HTTP_422_UNPROCESSABLE_ENTITY() == 422 and status.HTTP_429_TOO_MANY_REQUESTS() == 429 {
+  if status.http_404_NOT_FOUND() == 404 and status.http_422_UNPROCESSABLE_ENTITY() == 422 and status.http_429_TOO_MANY_REQUESTS() == 429 {
     Ok(())
   } else {
     Err("4xx constants wrong")

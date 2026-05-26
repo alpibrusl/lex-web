@@ -30,18 +30,18 @@ fn ctx_without_auth() -> ctx.Ctx {
 # verify signature) but their bodies stay pure — Lex's effect
 # rows are invariant, so we sign the wider contract here. Same
 # pattern handler bodies use under route_effectful.
-fn accept_admin(user :: Str, pw :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool {
+fn accept_admin(user :: Str, pw :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool {
   basic.passwords_equal(user, "admin") and basic.passwords_equal(pw, "s3cret")
 }
 
-fn deny_all(_u :: Str, _p :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool {
+fn deny_all(_u :: Str, _p :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool {
   false
 }
 
 # ---- Tests -------------------------------------------------------
 # `Basic YWRtaW46czNjcmV0` decodes to `admin:s3cret` — the
 # check callback accepts it, verify returns Ok.
-fn valid_credentials_ok() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn valid_credentials_ok() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_auth("Basic YWRtaW46czNjcmV0")
   match basic.verify(c, accept_admin) {
     Ok(pair) => match pair {
@@ -57,7 +57,7 @@ fn valid_credentials_ok() -> [io, time, crypto, random, sql, fs_read, fs_write, 
 
 # Missing Authorization header → 401 + WWW-Authenticate: Basic
 # realm="..." per RFC 7617 §2.
-fn missing_header_returns_401_with_challenge() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn missing_header_returns_401_with_challenge() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match basic.verify(ctx_without_auth(), accept_admin) {
     Ok(_) => Err("expected Err for missing header"),
     Err(r) => if r.status == 401 {
@@ -76,7 +76,7 @@ fn missing_header_returns_401_with_challenge() -> [io, time, crypto, random, sql
 }
 
 # Malformed base64 → treated as missing-header / 401.
-fn malformed_base64_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn malformed_base64_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match basic.verify(ctx_with_auth("Basic !!!not-b64!!!"), accept_admin) {
     Ok(_) => Err("expected Err for malformed base64"),
     Err(r) => if r.status == 401 {
@@ -91,7 +91,7 @@ fn malformed_base64_returns_401() -> [io, time, crypto, random, sql, fs_read, fs
 # missing. (Server might also be running JWT bearer auth on the
 # same endpoint via auth.verify_bearer; the two helpers are
 # independent.)
-fn missing_basic_prefix_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn missing_basic_prefix_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match basic.verify(ctx_with_auth("Bearer some-jwt"), accept_admin) {
     Ok(_) => Err("expected Err for non-Basic scheme"),
     Err(r) => if r.status == 401 {
@@ -105,7 +105,7 @@ fn missing_basic_prefix_returns_401() -> [io, time, crypto, random, sql, fs_read
 # Valid header shape, wrong credentials → 401 with the SAME
 # challenge so timing observers can't distinguish "user exists,
 # wrong password" from "user doesn't exist". RFC 7617 §4.4.
-fn wrong_credentials_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn wrong_credentials_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match basic.verify(ctx_with_auth("Basic YWRtaW46czNjcmV0"), deny_all) {
     Ok(_) => Err("expected Err when check rejects"),
     Err(r) => if r.status == 401 {
@@ -118,7 +118,7 @@ fn wrong_credentials_returns_401() -> [io, time, crypto, random, sql, fs_read, f
 
 # Lowercase `basic` scheme is accepted (HTTP scheme names are
 # case-insensitive per RFC 7235 §2.1).
-fn lowercase_scheme_accepted() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn lowercase_scheme_accepted() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match basic.verify(ctx_with_auth("basic YWRtaW46czNjcmV0"), accept_admin) {
     Ok(_) => Ok(()),
     Err(_) => Err("expected lowercase `basic` scheme to be accepted"),
@@ -127,9 +127,9 @@ fn lowercase_scheme_accepted() -> [io, time, crypto, random, sql, fs_read, fs_wr
 
 # Password containing colons is decoded correctly — only the first
 # colon separates user from pass per RFC 7617.
-fn password_with_colons_round_trips() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn password_with_colons_round_trips() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_auth("Basic dXNlcjpwOmFAcw==")
-  match basic.verify(c, fn (u :: Str, p :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool {
+  match basic.verify(c, fn (u :: Str, p :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool {
     basic.passwords_equal(u, "user") and basic.passwords_equal(p, "p:a@s")
   }) {
     Ok(_) => Ok(()),
@@ -138,11 +138,11 @@ fn password_with_colons_round_trips() -> [io, time, crypto, random, sql, fs_read
 }
 
 # ---- Suite -------------------------------------------------------
-fn suite() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
+fn suite() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
   [valid_credentials_ok(), missing_header_returns_401_with_challenge(), malformed_base64_returns_401(), missing_basic_prefix_returns_401(), wrong_credentials_returns_401(), lowercase_scheme_accepted(), password_with_colons_round_trips()]
 }
 
-fn run_all() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Unit {
+fn run_all() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Unit {
   let failures := list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,

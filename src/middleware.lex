@@ -23,7 +23,7 @@
 #   - MwCustom    — user-defined hooks (#27)
 #
 # Effects:
-#   run_pre / run_post — [io, time, crypto, random, sql, fs_read,
+#   run_pre / run_post — [io, time, random, sql, fs_read,
 #                         fs_write, net, concurrent] (HEff effect row)
 #                         — widened so user MwCustom hooks can do
 #                         I/O, talk to a DB, drive an actor, etc.
@@ -31,7 +31,7 @@
 #                         but sign the wider contract.
 #   apply_pre  — pure (built-in variants only; MwCustom dispatched
 #                 directly inside run_pre, not via apply_pre)
-#   apply_post — [io, time, crypto, random] (built-in variants only)
+#   apply_post — [io, time, random] (built-in variants only)
 
 import "std.str" as str
 
@@ -51,6 +51,14 @@ import "./ctx" as ctx
 
 import "./response" as resp
 
+import "lex-log/context" as log_ctx
+
+import "lex-log/log" as llog
+
+import "lex-log/span" as lspan
+
+import "lex-log/exporter" as exp
+
 # ---- Pre-middleware result ----------------------------------------
 # Short means stop immediately and return the given response.
 # Continue means pass the (possibly modified) Ctx to the handler.
@@ -58,9 +66,9 @@ import "./response" as resp
 # reference it.
 type PreResult = Short(resp.Response) | Continue(ctx.Ctx)
 
-type CustomMw = { name :: Str, before :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response }
+type CustomMw = { name :: Str, before :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response }
 
-type MiddlewareKind = MwCors(List[Str]) | MwBodyLimit(Int) | MwRequestId | MwLogger | MwGzip(Int) | MwTrustedHost(List[Str]) | MwCustom(CustomMw)
+type MiddlewareKind = MwCors(List[Str]) | MwBodyLimit(Int) | MwRequestId | MwLogger | MwGzip(Int) | MwTrustedHost(List[Str]) | MwCustom(CustomMw) | MwOtel(exp.Config)
 
 fn cors(origins :: List[Str]) -> MiddlewareKind {
   MwCors(origins)
@@ -98,20 +106,29 @@ fn trusted_host(hosts :: List[Str]) -> MiddlewareKind {
 # (logging, DB lookups, rate-limit state via a `conc` actor, etc.).
 # A do-nothing before is `fn (c :: ctx.Ctx) -> [HEff] PreResult { Continue(c) }`;
 # a do-nothing after is `fn (_c, r) -> [HEff] resp.Response { r }`.
-fn custom(name :: Str, before :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> MiddlewareKind {
+fn custom(name :: Str, before :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> MiddlewareKind {
   MwCustom({ name: name, before: before, after: after })
+}
+
+# OpenTelemetry middleware. Pre phase extracts the incoming W3C
+# traceparent header and stores the TraceCtx in the request state bag;
+# post phase emits an OTLP span + structured log record via `cfg`.
+# Use `exporter.stdout_config("my-service")` during development.
+fn otel(cfg :: exp.Config) -> MiddlewareKind {
+  MwOtel(cfg)
 }
 
 # `run_pre` aggregates over the middleware stack. Built-in variants
 # go through the pure `apply_pre`; MwCustom is dispatched directly
 # here so its effectful `before` closure runs under the HEff effect
 # row. Effect row widened from pure → HEff for the same reason.
-fn run_pre(mws :: List[MiddlewareKind], c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult {
-  list.fold(mws, Continue(c), fn (acc :: PreResult, kind :: MiddlewareKind) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult {
+fn run_pre(mws :: List[MiddlewareKind], c :: ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult {
+  list.fold(mws, Continue(c), fn (acc :: PreResult, kind :: MiddlewareKind) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult {
     match acc {
       Short(_) => acc,
       Continue(c2) => match kind {
         MwCustom(m) => m.before(c2),
+        MwOtel(_) => otel_pre(c2),
         _ => apply_pre(kind, c2),
       },
     }
@@ -181,10 +198,11 @@ fn preflight_response(c :: ctx.Ctx, origins :: List[Str]) -> resp.Response {
 # here so its effectful `after` closure runs under the HEff effect
 # row. Effect row widened from [io, time, crypto, random] → HEff
 # for the same reason.
-fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
-  list.fold(mws, response, fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+  list.fold(mws, response, fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
     match kind {
       MwCustom(m) => m.after(c, r),
+      MwOtel(cfg) => otel_post(cfg, c, r),
       _ => apply_post(kind, c, r),
     }
   })
@@ -194,7 +212,7 @@ fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response
 # only via run_post's direct dispatch above — the arm here is a
 # defensive no-op (return response unchanged) in case anyone calls
 # apply_post with an MwCustom value out of band.
-fn apply_post(kind :: MiddlewareKind, c :: ctx.Ctx, response :: resp.Response) -> [io, time, crypto, random] resp.Response {
+fn apply_post(kind :: MiddlewareKind, c :: ctx.Ctx, response :: resp.Response) -> [io, time, random] resp.Response {
   match kind {
     MwCors(origins) => {
       let origin_hdr := str.join(origins, ", ")
@@ -224,6 +242,7 @@ fn apply_post(kind :: MiddlewareKind, c :: ctx.Ctx, response :: resp.Response) -
     MwBodyLimit(_) => response,
     MwTrustedHost(_) => response,
     MwCustom(_) => response,
+    MwOtel(_) => response,
   }
 }
 
@@ -236,7 +255,56 @@ fn accepts_gzip(c :: ctx.Ctx) -> Bool {
 # Cryptographically random 16-byte ID (32 hex chars). Unlike a
 # time-based ID this is collision-resistant and unpredictable,
 # making it safe to expose in logs or response headers.
-fn make_request_id() -> [crypto, random] Str {
+fn make_request_id() -> [random] Str {
   crypto.random_str_hex(16)
+}
+
+# ---- OTel helpers ------------------------------------------------
+# Pre phase: extract / create TraceCtx and stash it + start time in
+# the request state bag so otel_post can read them after the handler.
+fn otel_pre(c :: ctx.Ctx) -> [time, random] PreResult {
+  let tp := ctx.header_or(c, "traceparent", "")
+  let trace_ctx := match log_ctx.from_header(tp) {
+    Some(parent_tc) => log_ctx.child(parent_tc),
+    None => log_ctx.new_root(),
+  }
+  let start_ms := time.now_ms()
+  let c2 := ctx.set_state(c, "otel.trace_id", trace_ctx.trace_id)
+  let c3 := ctx.set_state(c2, "otel.span_id", trace_ctx.span_id)
+  let c4 := ctx.set_state(c3, "otel.start_ms", int.to_str(start_ms))
+  Continue(c4)
+}
+
+# Parse start_ms written by otel_pre. Falls back to 0 on malformed input.
+fn otel_parse_ms(s :: Str) -> Int {
+  match str.to_int(s) {
+    Some(n) => n,
+    None => 0,
+  }
+}
+
+# Post phase: build an OTLP span + log record from the state bag values
+# written by otel_pre and export them via `cfg`.
+fn otel_post(cfg :: exp.Config, c :: ctx.Ctx, r :: resp.Response) -> [io, time, net] resp.Response {
+  let trace_id := ctx.get_state_or(c, "otel.trace_id", "")
+  let span_id := ctx.get_state_or(c, "otel.span_id", "")
+  let start_ms := otel_parse_ms(ctx.get_state_or(c, "otel.start_ms", "0"))
+  let end_ms := time.now_ms()
+  let trace_ctx := { trace_id: trace_id, span_id: span_id, sampled: true }
+  let sp_status := if r.status >= 500 {
+    lspan.SpanError(int.to_str(r.status))
+  } else {
+    lspan.SpanOk
+  }
+  let sp := { ctx: trace_ctx, parent_id: "", name: str.concat(c.method, str.concat(" ", c.path)), service: cfg.service, attrs: [("http.method", c.method), ("http.path", c.path), ("http.status_code", int.to_str(r.status))], start_ms: start_ms, end_ms: end_ms, status: sp_status }
+  let log_level := if r.status >= 500 {
+    llog.Error
+  } else {
+    llog.Info
+  }
+  let log_rec := { level: log_level, body: str.concat(c.method, str.concat(" ", str.concat(c.path, str.concat(" -> ", int.to_str(r.status))))), attrs: [("http.method", c.method), ("http.path", c.path), ("http.status_code", int.to_str(r.status))], trace_id: trace_id, span_id: span_id, service: cfg.service, ts_ms: end_ms }
+  let __lex_discard_1 := exp.export_spans(cfg, [sp])
+  let __lex_discard_2 := exp.export_logs(cfg, [log_rec])
+  r
 }
 

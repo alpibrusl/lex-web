@@ -459,3 +459,7 @@ Lex resolves imports by relative filesystem path. Import lex-web modules
 relative to your file. For lex-schema types (`Validator`, `Json`, …) use
 `src/test_fixtures.lex` or import via lex.toml package names — both approaches
 are safe since lex-lang v0.9.0 (#358, path canonicalization).
+
+---
+
+Built under the principles of [Trust Without Comprehension](https://alpibru.com/manifesto).
