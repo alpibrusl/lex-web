@@ -32,7 +32,7 @@ fn ctx_no_bearer() -> ctx.Ctx {
 
 # Validate callback: accepts only the token "good-token" and
 # yields claims with two scopes.
-fn validate_good(token :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[o2.Claims, Str] {
+fn validate_good(token :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[o2.Claims, Str] {
   if token == "good-token" {
     Ok({ sub: "user-42", scopes: ["read:items", "write:items"] })
   } else {
@@ -40,12 +40,12 @@ fn validate_good(token :: Str) -> [io, time, random, sql, fs_read, fs_write, net
   }
 }
 
-fn validate_no_scopes(_t :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[o2.Claims, Str] {
+fn validate_no_scopes(_t :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[o2.Claims, Str] {
   Ok({ sub: "user-42", scopes: [] })
 }
 
 # ---- verify_oauth2_bearer ---------------------------------------
-fn valid_bearer_returns_claims() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn valid_bearer_returns_claims() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_bearer("good-token")
   match o2.verify_oauth2_bearer(c, validate_good) {
     Ok(claims) => if claims.sub == "user-42" {
@@ -57,14 +57,14 @@ fn valid_bearer_returns_claims() -> [io, time, random, sql, fs_read, fs_write, n
   }
 }
 
-fn missing_bearer_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn missing_bearer_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match o2.verify_oauth2_bearer(ctx_no_bearer(), validate_good) {
     Ok(_) => Err("expected Err for missing bearer"),
     Err(r) => t.assert_status(r, 401),
   }
 }
 
-fn validate_failure_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn validate_failure_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match o2.verify_oauth2_bearer(ctx_with_bearer("nope"), validate_good) {
     Ok(_) => Err("expected Err when validate rejects"),
     Err(r) => t.assert_status(r, 401),
@@ -135,11 +135,11 @@ fn client_creds_scheme_emits_openapi_fragment() -> Result[Unit, Str] {
 }
 
 # ---- Suite -------------------------------------------------------
-fn suite() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
+fn suite() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
   [valid_bearer_returns_claims(), missing_bearer_returns_401(), validate_failure_returns_401(), require_scopes_passes_when_all_present(), require_scopes_403s_when_any_missing(), require_scopes_empty_required_is_ok(), password_scheme_emits_openapi_fragment(), auth_code_scheme_emits_openapi_fragment(), client_creds_scheme_emits_openapi_fragment()]
 }
 
-fn run_all() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Unit {
+fn run_all() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Unit {
   let failures := list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,
