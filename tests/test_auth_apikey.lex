@@ -32,16 +32,16 @@ fn ctx_with_cookie(jar :: Str) -> ctx.Ctx {
   ctx_with("GET", "/", "", map.set(map.new(), "cookie", jar))
 }
 
-fn accept_known(k :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool {
+fn accept_known(k :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool {
   k == "k_live_abcd1234"
 }
 
-fn deny_all(_k :: Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool {
+fn deny_all(_k :: Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool {
   false
 }
 
 # ---- Header ------------------------------------------------------
-fn header_valid_key_ok() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn header_valid_key_ok() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_header("x-api-key", "k_live_abcd1234")
   match apikey.verify_header(c, "x-api-key", accept_known) {
     Ok(k) => if k == "k_live_abcd1234" {
@@ -53,7 +53,7 @@ fn header_valid_key_ok() -> [io, time, random, sql, fs_read, fs_write, net, conc
   }
 }
 
-fn header_missing_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn header_missing_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with("GET", "/", "", map.new())
   match apikey.verify_header(c, "x-api-key", accept_known) {
     Ok(_) => Err("expected Err for missing header"),
@@ -61,7 +61,7 @@ fn header_missing_returns_401() -> [io, time, random, sql, fs_read, fs_write, ne
   }
 }
 
-fn header_rejected_key_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn header_rejected_key_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_header("x-api-key", "wrong-token")
   match apikey.verify_header(c, "x-api-key", deny_all) {
     Ok(_) => Err("expected Err when valid returns false"),
@@ -70,7 +70,7 @@ fn header_rejected_key_returns_401() -> [io, time, random, sql, fs_read, fs_writ
 }
 
 # ---- Query -------------------------------------------------------
-fn query_valid_key_ok() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn query_valid_key_ok() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_query("api_key=k_live_abcd1234")
   match apikey.verify_query(c, "api_key", accept_known) {
     Ok(_) => Ok(()),
@@ -78,7 +78,7 @@ fn query_valid_key_ok() -> [io, time, random, sql, fs_read, fs_write, net, concu
   }
 }
 
-fn query_missing_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn query_missing_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match apikey.verify_query(ctx_with("GET", "/", "", map.new()), "api_key", accept_known) {
     Ok(_) => Err("expected Err for missing query param"),
     Err(r) => t.assert_status(r, 401),
@@ -86,7 +86,7 @@ fn query_missing_returns_401() -> [io, time, random, sql, fs_read, fs_write, net
 }
 
 # ---- Cookie ------------------------------------------------------
-fn cookie_valid_key_ok() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn cookie_valid_key_ok() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let c := ctx_with_cookie("api_key=k_live_abcd1234")
   match apikey.verify_cookie(c, "api_key", accept_known) {
     Ok(_) => Ok(()),
@@ -94,7 +94,7 @@ fn cookie_valid_key_ok() -> [io, time, random, sql, fs_read, fs_write, net, conc
   }
 }
 
-fn cookie_missing_returns_401() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn cookie_missing_returns_401() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match apikey.verify_cookie(ctx_with("GET", "/", "", map.new()), "api_key", accept_known) {
     Ok(_) => Err("expected Err for missing cookie"),
     Err(r) => t.assert_status(r, 401),
@@ -102,11 +102,11 @@ fn cookie_missing_returns_401() -> [io, time, random, sql, fs_read, fs_write, ne
 }
 
 # ---- Suite -------------------------------------------------------
-fn suite() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
+fn suite() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
   [header_valid_key_ok(), header_missing_returns_401(), header_rejected_key_returns_401(), query_valid_key_ok(), query_missing_returns_401(), cookie_valid_key_ok(), cookie_missing_returns_401()]
 }
 
-fn run_all() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Unit {
+fn run_all() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Unit {
   let failures := list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,

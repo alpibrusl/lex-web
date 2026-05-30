@@ -253,7 +253,7 @@ fn no_response_model_means_passthrough() -> Result[Unit, Str] {
 # `DPlain(Response)` for HPure/HEff routes, `DStream(StreamResponse)`
 # for HStream routes. The caller's bridge matches the outcome and
 # picks the right `BodyStr` / `BodyStream` wrapping for net.serve_fn.
-fn tick_stream(_c :: ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] strm.StreamResponse {
+fn tick_stream(_c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] strm.StreamResponse {
   let frames := list.map(list.range(0, 3), fn (n :: Int) -> Str {
     strm.sse_event(str.concat("tick-", str.concat(str.to_lower("X"), "")))
   })
@@ -272,7 +272,7 @@ fn stream_router() -> router.Router {
   }
 }
 
-fn dispatch_outcome_routes_stream_to_dstream() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn dispatch_outcome_routes_stream_to_dstream() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match router.dispatch_outcome(stream_router(), t.get("/events")) {
     DStream(sr) => if sr.status == 200 {
       Ok(())
@@ -283,14 +283,14 @@ fn dispatch_outcome_routes_stream_to_dstream() -> [io, time, random, sql, fs_rea
   }
 }
 
-fn dispatch_outcome_routes_plain_to_dplain() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn dispatch_outcome_routes_plain_to_dplain() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match router.dispatch_outcome(stream_router(), t.get("/plain")) {
     DPlain(r) => t.assert_body_eq(r, "hello"),
     DStream(_) => Err("expected DPlain for a plain route_handler"),
   }
 }
 
-fn dispatch_outcome_unmatched_is_dplain_404() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn dispatch_outcome_unmatched_is_dplain_404() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   match router.dispatch_outcome(stream_router(), t.get("/missing")) {
     DPlain(r) => t.assert_status(r, 404),
     DStream(_) => Err("expected DPlain(404) for an unmatched path"),
@@ -300,7 +300,7 @@ fn dispatch_outcome_unmatched_is_dplain_404() -> [io, time, random, sql, fs_read
 # `dispatch` (the plain dispatcher) 500s on HStream routes with a
 # clear hint pointing callers at `dispatch_outcome`. This is the
 # fall-back behaviour; mixed apps should use dispatch_outcome.
-fn legacy_dispatch_500s_on_stream_route() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn legacy_dispatch_500s_on_stream_route() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let out := router.dispatch(stream_router(), t.get("/events"))
   if out.status == 500 and str.contains(out.body, "dispatch_outcome") {
     Ok(())
@@ -313,7 +313,7 @@ fn legacy_dispatch_500s_on_stream_route() -> [io, time, random, sql, fs_read, fs
 # the stub-response shim; the body iterator passes through
 # untouched. MwRequestId stamps `x-request-id` on the response,
 # which means stream responses also get the trace ID.
-fn stream_post_middleware_stamps_headers() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
+fn stream_post_middleware_stamps_headers() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Unit, Str] {
   let r := (router.new() |> fn (rr :: router.Router) -> router.Router {
     router.use_mw(rr, mw.request_id())
   }) |> fn (rr :: router.Router) -> router.Router {
@@ -329,7 +329,7 @@ fn stream_post_middleware_stamps_headers() -> [io, time, random, sql, fs_read, f
 }
 
 # ---- Suite -------------------------------------------------------
-fn suite() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
+fn suite() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] List[Result[Unit, Str]] {
   [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end(), response_model_filters_unknown_fields(), response_model_500s_on_missing_required_field(), response_model_500s_on_unparseable_body(), no_response_model_means_passthrough(), dispatch_outcome_routes_stream_to_dstream(), dispatch_outcome_routes_plain_to_dplain(), dispatch_outcome_unmatched_is_dplain_404(), legacy_dispatch_500s_on_stream_route(), stream_post_middleware_stamps_headers()]
 }
 
@@ -338,7 +338,7 @@ fn suite() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] List[R
 # (`1 / 0`) when any case failed; the failed Err(_) messages are not
 # surfaced today — `lex test` only reports the panic site — but the
 # panic correctly fails the run.
-fn run_all() -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Unit {
+fn run_all() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Unit {
   let failures := list.fold(suite(), 0, fn (n :: Int, r :: Result[Unit, Str]) -> Int {
     match r {
       Ok(_) => n,

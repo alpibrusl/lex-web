@@ -108,7 +108,7 @@ fn with_description(s :: OAuth2Scheme, description :: Str) -> OAuth2Scheme {
 # the network or a DB-backed token store works. Pure validators
 # (verify HS256 locally) need to declare the wide row in their
 # signature — same pattern as auth_basic.lex.
-fn verify_oauth2_bearer(c :: ctx.Ctx, validate :: (Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Claims, Str]) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Claims, resp.Response] {
+fn verify_oauth2_bearer(c :: ctx.Ctx, validate :: (Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Claims, Str]) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Claims, resp.Response] {
   match ctx.bearer_token(c) {
     None => Err(resp.unauthorized("missing Bearer token")),
     Some(token) => match validate(token) {

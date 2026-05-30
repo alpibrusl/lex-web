@@ -32,7 +32,7 @@ import "./response" as resp
 # (case-insensitive — ctx.header lower-cases on the way in) and
 # calls `valid(key)`. Missing → 401 with an `x-error: api key
 # required` header.
-fn verify_header(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Str, resp.Response] {
+fn verify_header(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Str, resp.Response] {
   match ctx.header(c, name) {
     None => Err(missing_key_response(str.concat("header ", name))),
     Some(key) => if valid(key) {
@@ -54,7 +54,7 @@ fn verify_header(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, random,
 # headers. Prefer header- or cookie-based extraction in
 # production. This helper exists for compatibility, not as a
 # recommended pattern.
-fn verify_query(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Str, resp.Response] {
+fn verify_query(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Str, resp.Response] {
   match ctx.query_param(c, name) {
     None => Err(missing_key_response(str.concat("query parameter ", name))),
     Some(key) => if valid(key) {
@@ -71,7 +71,7 @@ fn verify_query(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, random, 
 # `valid`. SameSite / Secure attributes are the caller's
 # responsibility on the `Set-Cookie` side; this helper only
 # extracts the value at request time.
-fn verify_cookie(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[Str, resp.Response] {
+fn verify_cookie(c :: ctx.Ctx, name :: Str, valid :: (Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[Str, resp.Response] {
   match ctx.cookie(c, name) {
     None => Err(missing_key_response(str.concat("cookie ", name))),
     Some(key) => if valid(key) {

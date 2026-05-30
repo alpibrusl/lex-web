@@ -66,7 +66,7 @@ import "lex-log/exporter" as exp
 # reference it.
 type PreResult = Short(resp.Response) | Continue(ctx.Ctx)
 
-type CustomMw = { name :: Str, before :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response }
+type CustomMw = { name :: Str, before :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response }
 
 type MiddlewareKind = MwCors(List[Str]) | MwBodyLimit(Int) | MwRequestId | MwLogger | MwGzip(Int) | MwTrustedHost(List[Str]) | MwCustom(CustomMw) | MwOtel(exp.Config)
 
@@ -106,7 +106,7 @@ fn trusted_host(hosts :: List[Str]) -> MiddlewareKind {
 # (logging, DB lookups, rate-limit state via a `conc` actor, etc.).
 # A do-nothing before is `fn (c :: ctx.Ctx) -> [HEff] PreResult { Continue(c) }`;
 # a do-nothing after is `fn (_c, r) -> [HEff] resp.Response { r }`.
-fn custom(name :: Str, before :: (ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> MiddlewareKind {
+fn custom(name :: Str, before :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult, after :: (ctx.Ctx, resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> MiddlewareKind {
   MwCustom({ name: name, before: before, after: after })
 }
 
@@ -122,8 +122,8 @@ fn otel(cfg :: exp.Config) -> MiddlewareKind {
 # go through the pure `apply_pre`; MwCustom is dispatched directly
 # here so its effectful `before` closure runs under the HEff effect
 # row. Effect row widened from pure → HEff for the same reason.
-fn run_pre(mws :: List[MiddlewareKind], c :: ctx.Ctx) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult {
-  list.fold(mws, Continue(c), fn (acc :: PreResult, kind :: MiddlewareKind) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] PreResult {
+fn run_pre(mws :: List[MiddlewareKind], c :: ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult {
+  list.fold(mws, Continue(c), fn (acc :: PreResult, kind :: MiddlewareKind) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] PreResult {
     match acc {
       Short(_) => acc,
       Continue(c2) => match kind {
@@ -198,8 +198,8 @@ fn preflight_response(c :: ctx.Ctx, origins :: List[Str]) -> resp.Response {
 # here so its effectful `after` closure runs under the HEff effect
 # row. Effect row widened from [io, time, crypto, random] → HEff
 # for the same reason.
-fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
-  list.fold(mws, response, fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+fn run_post(mws :: List[MiddlewareKind], c :: ctx.Ctx, response :: resp.Response) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
+  list.fold(mws, response, fn (r :: resp.Response, kind :: MiddlewareKind) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response {
     match kind {
       MwCustom(m) => m.after(c, r),
       MwOtel(cfg) => otel_post(cfg, c, r),

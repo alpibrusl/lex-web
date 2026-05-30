@@ -131,7 +131,7 @@ fn std_bytes_to_str(b :: Bytes) -> Result[Str, Str] {
 # invariant and pure fns don't auto-widen to effectful. The body
 # stays pure; only the type signature carries the row. See
 # `tests/test_auth_basic.lex` for the pattern.
-fn verify(c :: ctx.Ctx, check :: (Str, Str) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, random, sql, fs_read, fs_write, net, concurrent] Result[(Str, Str), resp.Response] {
+fn verify(c :: ctx.Ctx, check :: (Str, Str) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Bool) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Result[(Str, Str), resp.Response] {
   match decode_credentials(c) {
     None => Err(unauthorized_with_realm("Restricted")),
     Some(pair) => match pair {
