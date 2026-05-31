@@ -1,5 +1,17 @@
 # lex-web
 
+## Live demo — HTTP + WebSocket actor-model chat
+
+One process, two listeners, named actors, effect-typed. Alice connects over WebSocket, joins a room, receives a broadcast sent via REST, and gets a DM — all in under 60 seconds.
+
+[![lex-web chat demo](https://asciinema.org/a/UObAtaokckri0L1e.svg)](https://asciinema.org/a/UObAtaokckri0L1e)
+
+```sh
+bash examples/demo.sh   # prereq: websocat (brew install websocat)
+```
+
+---
+
 HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang),
 built on [lex-schema](https://github.com/alpibrusl/lex-schema) for request
 validation. Designed as a FastAPI-style toolkit for Lex: typed parameters,

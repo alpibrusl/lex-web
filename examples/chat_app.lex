@@ -160,7 +160,8 @@ fn on_message(conn :: WsConn, msg :: WsMessage) -> [concurrent] WsAction {
   }
 }
 
-fn handle_chat(conn :: WsConn, line :: Str) -> [concurrent] WsAction {
+fn handle_chat(conn :: WsConn, line_raw :: Str) -> [concurrent] WsAction {
+  let line := str.trim(line_raw)
   let me := user_id_from_path(conn.path)
   if str.starts_with(line, "/join ") {
     let room := str.slice(line, 6, str.len(line))
@@ -351,16 +352,19 @@ fn main() -> [io, net, concurrent, time, crypto, random, sql, fs_read, fs_write]
   let __lex_discard_5 := io.print("chat-app — WS :9100  HTTP :9000")
   let __lex_discard_6 := io.print("  ws ws://127.0.0.1:9100/ws/<user>")
   let __lex_discard_7 := io.print("  http://127.0.0.1:9000/rooms /users /history.html  POST /say /dm/:user")
-  let __lex_discard_8 := conc.spawn(0, fn (_s :: Int, _m :: Int) -> [io, net, concurrent, time, crypto, random, sql, fs_read, fs_write] (Int, Int) {
-    let __lex_discard_9 := net.serve_ws_fn_actor(9100, "", name_of, on_message)
-    (0, 0)
-  })
   let r := build_app()
   let handler := fn (req :: Request) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] Response {
     let raw := { body: req.body, method: req.method, path: req.path, query: req.query, headers: req.headers }
     let resp_v := router.dispatch(r, raw)
     { status: resp_v.status, body: BodyStr(resp_v.body), headers: resp_v.headers }
   }
-  net.serve_fn(9000, handler)
+  let _ := list.par_map([0, 1], fn (i :: Int) -> [io, net, concurrent, time, crypto, random, sql, fs_read, fs_write] Unit {
+    if i == 0 {
+      net.serve_ws_fn_actor(9100, "", name_of, on_message)
+    } else {
+      net.serve_fn(9000, handler)
+    }
+  })
+  ()
 }
 
