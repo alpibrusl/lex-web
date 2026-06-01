@@ -10,6 +10,26 @@ One process, two listeners, named actors, effect-typed. Alice connects over WebS
 bash examples/demo.sh   # prereq: websocat (brew install websocat)
 ```
 
+## Demo — one schema, every artifact
+
+A single `ModelSchema` drives request validation, database queries, DDL, TypeScript codegen, and Python codegen — with no duplication and no drift.
+
+[![asciicast](https://asciinema.org/a/l6xTUU1gzlVSxxom.svg)](https://asciinema.org/a/l6xTUU1gzlVSxxom)
+
+```sh
+bash examples/one_schema.sh
+```
+
+| Artifact | Python | Lex |
+|---|---|---|
+| Request validation | Pydantic model | `order_schema` |
+| Response shaping | Pydantic model (or 2nd) | `order_schema` |
+| Database model | SQLAlchemy ORM class | `order_schema` |
+| OpenAPI spec | FastAPI auto-gen | `order_schema` |
+| TypeScript client types | manual / tsc plugin | `order_schema` |
+| Migration | Alembic revision file | `diff(v1, v2)` |
+| Effect enforcement | none | `[sql]` in sig |
+
 ---
 
 HTTP framework for the [Lex language](https://github.com/alpibrusl/lex-lang),
