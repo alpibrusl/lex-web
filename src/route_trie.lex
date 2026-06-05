@@ -61,7 +61,7 @@
 # set on `HEff` / `HStream` is intentionally generous: narrow the
 # handler *body*, not the type, per the lex agent-guidelines.
 
-type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, Option[v.Validator])) | HStream(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse, Option[v.Validator]))
+type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] resp.Response, Option[v.Validator])) | HStream(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] stream.StreamResponse, Option[v.Validator]))
 
 import "std.str" as str
 
