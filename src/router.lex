@@ -152,7 +152,14 @@ fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> res
 # declaration. `concurrent` is in the set so handlers can drive
 # the WS outbound bridge actors registered by serve_ws_fn_actor
 # (lex-lang 0.9.5) via conc.lookup + conc.tell.
-fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] resp.Response) -> Router {
+fn route_effectful(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
+  add_record(r, method, pattern, HEff(handler, None), None, empty_meta())
+}
+
+# Like route_effectful but also admits llm and proc in the handler's
+# effect row. Use this for A2A / LLM-backed handlers that need to call
+# an LLM or spawn a subprocess.
+fn route_effectful_llm(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] resp.Response) -> Router {
   add_record(r, method, pattern, HEff(handler, None), None, empty_meta())
 }
 
@@ -164,7 +171,7 @@ fn handler_json(r :: Router, method :: Str, pattern :: Str, validator :: v.Valid
 }
 
 # Effectful variant of handler_json.
-fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] resp.Response) -> Router {
+fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response) -> Router {
   add_record(r, method, pattern, HEff(handler, None), Some(validator), empty_meta())
 }
 
@@ -181,7 +188,7 @@ fn handler_json_effectful(r :: Router, method :: Str, pattern :: Str, validator 
 # `route_effectful` so handlers can pull from a database, an
 # actor, or the file system to source chunks. Narrow the body,
 # not the type.
-fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] stream.StreamResponse) -> Router {
+fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse) -> Router {
   add_record(r, method, pattern, HStream(handler, None), None, empty_meta())
 }
 
@@ -189,7 +196,7 @@ fn route_stream(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx)
 # (tags / summary / description) on a stream route. response_model
 # is accepted for symmetry but NOT enforced on stream routes in
 # v1 — see route_trie.lex for the rationale.
-fn route_stream_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] stream.StreamResponse, meta :: RouteMeta) -> Router {
+fn route_stream_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] stream.StreamResponse, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HStream(handler, meta.response_model), None, meta)
 }
 
@@ -233,7 +240,7 @@ fn route_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.C
   add_record(r, method, pattern, HPure(handler, meta.response_model), None, meta)
 }
 
-fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] resp.Response, meta :: RouteMeta) -> Router {
+fn route_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HEff(handler, meta.response_model), None, meta)
 }
 
@@ -241,7 +248,7 @@ fn handler_json_with_meta(r :: Router, method :: Str, pattern :: Str, validator 
   add_record(r, method, pattern, HPure(handler, meta.response_model), Some(validator), meta)
 }
 
-fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] resp.Response, meta :: RouteMeta) -> Router {
+fn handler_json_effectful_with_meta(r :: Router, method :: Str, pattern :: Str, validator :: v.Validator, handler :: (ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent] resp.Response, meta :: RouteMeta) -> Router {
   add_record(r, method, pattern, HEff(handler, meta.response_model), Some(validator), meta)
 }
 
