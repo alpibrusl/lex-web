@@ -11,20 +11,30 @@
 # Run:
 #   lex run --allow-effects io examples/one_schema.lex main
 
-import "std.io"   as io
+import "std.io" as io
+
 import "std.list" as list
-import "std.int"  as int
-import "std.str"  as str
 
-import "lex-schema/schema"      as s
+import "std.int" as int
+
+import "std.str" as str
+
+import "lex-schema/schema" as s
+
 import "lex-schema/constraints" as c
-import "lex-schema/validator"   as v
-import "lex-schema/json_value"  as jv
-import "lex-schema/error"       as se
 
-import "lex-orm/query"      as q
-import "lex-orm/predicate"  as pr
-import "lex-orm/migrate"    as mig
+import "lex-schema/validator" as v
+
+import "lex-schema/json_value" as jv
+
+import "lex-schema/error" as se
+
+import "lex-orm/query" as q
+
+import "lex-orm/predicate" as pr
+
+import "lex-orm/migrate" as mig
+
 import "lex-orm/connection" as conn
 
 # io.print does not add a trailing newline; ln appends one so the
@@ -34,14 +44,7 @@ fn ln(s2 :: Str) -> [io] Unit {
 }
 
 # ---- Domain type --------------------------------------------------
-type Order = {
-  id         :: Str,
-  symbol     :: Str,
-  side       :: Str,
-  quantity   :: Int,
-  price      :: Str,
-  account_id :: Str,
-}
+type Order = { id :: Str, symbol :: Str, side :: Str, quantity :: Int, price :: Str, account_id :: Str }
 
 # Decode a jv.Json into an Order -- nested match chain.
 fn decode_order(j :: jv.Json) -> Result[Order, se.Errors] {
@@ -57,14 +60,7 @@ fn decode_order(j :: jv.Json) -> Result[Order, se.Errors] {
             Err(e) => Err(e),
             Ok(price) => match jv.j_str("", j, "account_id", []) {
               Err(e) => Err(e),
-              Ok(account_id) => Ok({
-                id:         id,
-                symbol:     symbol,
-                side:       side,
-                quantity:   quantity,
-                price:      price,
-                account_id: account_id,
-              }),
+              Ok(account_id) => Ok({ id: id, symbol: symbol, side: side, quantity: quantity, price: price, account_id: account_id }),
             },
           },
         },
@@ -75,34 +71,11 @@ fn decode_order(j :: jv.Json) -> Result[Order, se.Errors] {
 
 # ---- Schema definitions -------------------------------------------
 fn order_schema() -> s.ModelSchema {
-  {
-    title:       "Order",
-    description: "A trading order.",
-    fields: [
-      s.required_str("id",         [StrUuid]),
-      s.required_str("symbol",     [StrNonEmpty, StrMaxLen(10)]),
-      s.required_str("side",       [StrOneOf(["buy", "sell"])]),
-      s.required_int("quantity",   [IntPositive, IntMax(10000)]),
-      s.required_str("price",      [StrNonEmpty]),
-      s.required_str("account_id", [StrNonEmpty]),
-    ],
-  }
+  { title: "Order", description: "A trading order.", fields: [s.required_str("id", [StrUuid]), s.required_str("symbol", [StrNonEmpty, StrMaxLen(10)]), s.required_str("side", [StrOneOf(["buy", "sell"])]), s.required_int("quantity", [IntPositive, IntMax(10000)]), s.required_str("price", [StrNonEmpty]), s.required_str("account_id", [StrNonEmpty])] }
 }
 
 fn order_schema_v2() -> s.ModelSchema {
-  {
-    title:       "Order",
-    description: "A trading order.",
-    fields: [
-      s.required_str("id",         [StrUuid]),
-      s.required_str("symbol",     [StrNonEmpty, StrMaxLen(10)]),
-      s.required_str("side",       [StrOneOf(["buy", "sell"])]),
-      s.required_int("quantity",   [IntPositive, IntMax(10000)]),
-      s.required_str("price",      [StrNonEmpty]),
-      s.required_str("account_id", [StrNonEmpty]),
-      s.required_str("status",     [StrOneOf(["pending", "filled", "cancelled"])]),
-    ],
-  }
+  { title: "Order", description: "A trading order.", fields: [s.required_str("id", [StrUuid]), s.required_str("symbol", [StrNonEmpty, StrMaxLen(10)]), s.required_str("side", [StrOneOf(["buy", "sell"])]), s.required_int("quantity", [IntPositive, IntMax(10000)]), s.required_str("price", [StrNonEmpty]), s.required_str("account_id", [StrNonEmpty]), s.required_str("status", [StrOneOf(["pending", "filled", "cancelled"])])] }
 }
 
 fn order_validator() -> v.Validator {
@@ -113,8 +86,8 @@ fn order_validator() -> v.Validator {
 fn param_to_str(p :: SqlParam) -> Str {
   match p {
     PStr(s2) => "\"" + s2 + "\"",
-    PInt(n)  => int.to_str(n),
-    PNull    => "null",
+    PInt(n) => int.to_str(n),
+    PNull => "null",
   }
 }
 
@@ -141,27 +114,22 @@ fn section_schema() -> [io] Unit {
 # ---- Section 2 -- Validation --------------------------------------
 fn section_validation() -> [io] Unit {
   let val := order_validator()
-
   let __h := ln("  -- Validation --------------------------------------------------")
-
-  # Valid order
   let valid_json := "{\"id\":\"550e8400-e29b-41d4-a716-446655440000\",\"symbol\":\"MSFT\",\"side\":\"buy\",\"quantity\":100,\"price\":\"125.50\",\"account_id\":\"ACC-1\"}"
   let __v1 := ln("  Valid order:")
   let __v2 := ln("  " + valid_json)
   let __v3 := match v.validate_str(val, valid_json) {
-    Ok(_)     => ln("  ok -- all fields pass"),
+    Ok(_) => ln("  ok -- all fields pass"),
     Err(errs) => ln("  unexpected errors: " + se.format(errs)),
   }
   let __v4 := ln("")
-
-  # Invalid order -- 4 simultaneous errors
   let bad_json := "{\"id\":\"not-a-uuid\",\"symbol\":\"TOOLONGSYMBOL\",\"side\":\"short\",\"quantity\":-5,\"price\":\"99.00\",\"account_id\":\"ACC-1\"}"
   let __b1 := ln("  Invalid order:")
   let __b2 := ln("  " + bad_json)
   let __b3 := match v.validate_str(val, bad_json) {
-    Ok(_)     => ln("  unexpected Ok"),
+    Ok(_) => ln("  unexpected Ok"),
     Err(errs) => {
-      let n   := list.len(errs)
+      let n := list.len(errs)
       let __e1 := ln("  x  " + int.to_str(n) + " validation errors -- all returned at once")
       let __e2 := list.fold(errs, (), fn (_acc :: Unit, err :: se.Error) -> [io] Unit {
         ln("     " + err.path + ": " + err.code + " -- " + err.message)
@@ -178,35 +146,16 @@ fn section_validation() -> [io] Unit {
 # ---- Section 3 -- Pure query building -----------------------------
 fn section_queries() -> [io] Unit {
   let repo := q.for_schema(order_schema(), decode_order)
-
-  let __h  := ln("  -- Pure query building -----------------------------------------")
+  let __h := ln("  -- Pure query building -----------------------------------------")
   let __h2 := ln("  SELECT -- no database, no session, no connection needed")
   let __h3 := ln("")
-
-  # SELECT with two WHERE clauses and LIMIT
-  let sel :=
-    q.limit(
-      q.where_clause(
-        q.where_clause(q.select(repo), pr.eq("account_id", PStr("ACC-1"))),
-        pr.eq("side", PStr("buy"))
-      ),
-      20
-    )
+  let sel := q.limit(q.where_clause(q.where_clause(q.select(repo), pr.eq("account_id", PStr("ACC-1"))), pr.eq("side", PStr("buy"))), 20)
   let built := q.build_select(sel)
   let __s1 := ln("  sql:    " + built.sql)
   let __s2 := ln("  params: " + params_to_str(built.params))
   let __s3 := ln("")
-
-  # INSERT
-  let valid_json_val := JObj([
-    ("id",         JStr("550e8400-e29b-41d4-a716-446655440000")),
-    ("symbol",     JStr("MSFT")),
-    ("side",       JStr("buy")),
-    ("quantity",   JInt(100)),
-    ("price",      JStr("125.50")),
-    ("account_id", JStr("ACC-1")),
-  ])
-  let ins      := q.insert(repo, valid_json_val)
+  let valid_json_val := JObj([("id", JStr("550e8400-e29b-41d4-a716-446655440000")), ("symbol", JStr("MSFT")), ("side", JStr("buy")), ("quantity", JInt(100)), ("price", JStr("125.50")), ("account_id", JStr("ACC-1"))])
+  let ins := q.insert(repo, valid_json_val)
   let built_ins := q.build_insert(ins)
   let __i1 := ln("  INSERT RETURNING:")
   let __i2 := ln("  sql:    " + built_ins.sql + " RETURNING *")
@@ -221,13 +170,11 @@ fn section_queries() -> [io] Unit {
 # ---- Section 4 -- DDL from schema ---------------------------------
 fn section_ddl() -> [io] Unit {
   let __h := ln("  -- Schema-driven DDL -------------------------------------------")
-
-  let ddl     := mig.to_create_table(order_schema(), DbSqlite(()))
+  let ddl := mig.to_create_table(order_schema(), DbSqlite(()))
   let __d1 := ln(ddl)
   let __d2 := ln("")
-
   let changes := mig.diff(order_schema(), order_schema_v2())
-  let alter   := mig.to_alter_table("Order", changes, DbSqlite(()))
+  let alter := mig.to_alter_table("Order", changes, DbSqlite(()))
   let __d3 := ln("  Schema evolution  diff(v1, v2):")
   let __d4 := ln(alter)
   let __d5 := ln("")
@@ -240,12 +187,9 @@ fn section_ddl() -> [io] Unit {
 # ---- Section 5 -- Codegen -----------------------------------------
 fn section_codegen() -> [io] Unit {
   let val := order_validator()
-
   let __h := ln("  -- Codegen -----------------------------------------------------")
-
   let ts := v.export_typescript(val)
   let py := v.export_python(val)
-
   let __t1 := ln("  TypeScript:")
   let __t2 := ln(ts)
   let __t3 := ln("")
@@ -260,7 +204,7 @@ fn section_codegen() -> [io] Unit {
 
 # ---- Section 6 -- Summary table -----------------------------------
 fn section_summary() -> [io] Unit {
-  let __h  := ln("  -- Summary -----------------------------------------------------")
+  let __h := ln("  -- Summary -----------------------------------------------------")
   let __h2 := ln("  One schema definition in lex. In Python: five separate files.")
   let __h3 := ln("")
   let __t0 := ln("  Artifact                    Python                   Lex")
@@ -290,3 +234,4 @@ fn main() -> [fs_write, io, sql] Unit {
   let __10 := section_summary()
   ()
 }
+

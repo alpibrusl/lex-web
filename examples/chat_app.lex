@@ -358,7 +358,7 @@ fn main() -> [io, net, concurrent, time, crypto, random, sql, fs_read, fs_write]
     let resp_v := router.dispatch(r, raw)
     { status: resp_v.status, body: BodyStr(resp_v.body), headers: resp_v.headers }
   }
-  let _ := list.par_map([0, 1], fn (i :: Int) -> [io, net, concurrent, time, crypto, random, sql, fs_read, fs_write] Unit {
+  let __lex_discard_1 := list.par_map([0, 1], fn (i :: Int) -> [io, net, concurrent, time, crypto, random, sql, fs_read, fs_write] Unit {
     if i == 0 {
       net.serve_ws_fn_actor(9100, "", name_of, on_message)
     } else {
