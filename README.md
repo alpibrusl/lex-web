@@ -1,5 +1,9 @@
 # lex-web
 
+[![CI](https://github.com/alpibrusl/lex-web/actions/workflows/lex.yml/badge.svg)](https://github.com/alpibrusl/lex-web/actions/workflows/lex.yml)
+
+**Part of the [Lex](https://lexlang.org) project** — Library · [Manifesto](https://lexlang.org/manifesto) · [All packages](https://lexlang.org)
+
 ## Live demo — HTTP + WebSocket actor-model chat
 
 One process, two listeners, named actors, effect-typed. Alice connects over WebSocket, joins a room, receives a broadcast sent via REST, and gets a DM — all in under 60 seconds.
