@@ -270,7 +270,7 @@ fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sq
 # Pure dispatcher: honours only HPure routes. HEff routes return
 # a synthetic 500 — tests that need effectful handlers should run
 # under dispatch + the appropriate --allow-effects gate.
-fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
+fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> [net] resp.Response {
   let method := str.to_upper(req.method)
   let path_segs := split_path(req.path)
   match rt.lookup(r.trie, method, path_segs) {
@@ -419,7 +419,7 @@ fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody,
 # the structured error list as JSON. The post-middleware chain
 # (logger, CORS, request-id, etc.) runs over the *replaced* response,
 # matching the standard "framework owns the 500 shape" contract.
-fn apply_response_model(response :: resp.Response, rm :: Option[v.Validator]) -> resp.Response {
+fn apply_response_model(response :: resp.Response, rm :: Option[v.Validator]) -> [net] resp.Response {
   match rm {
     None => response,
     Some(validator) => match v.validate_str(validator, response.body) {

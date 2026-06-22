@@ -31,11 +31,11 @@ type Ctx = { method :: Str, path :: Str, query :: Str, body :: Str, path_params 
 # Build a Ctx from the raw request + the param bindings the
 # router extracted during segment matching. `state` starts empty;
 # middleware populates it via `set_state` for downstream stages.
-fn from_request(req :: RawRequest, params :: Map[Str, Str]) -> Ctx {
+fn from_request(req :: RawRequest, params :: Map[Str, Str]) -> [net] Ctx {
   { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: req.headers, state: map.new() }
 }
 
-fn from_request_with_headers(req :: RawRequest, params :: Map[Str, Str], hdrs :: Map[Str, Str]) -> Ctx {
+fn from_request_with_headers(req :: RawRequest, params :: Map[Str, Str], hdrs :: Map[Str, Str]) -> [net] Ctx {
   { method: req.method, path: req.path, query: req.query, body: req.body, path_params: params, headers: hdrs, state: map.new() }
 }
 
@@ -59,6 +59,10 @@ fn from_request_with_headers(req :: RawRequest, params :: Map[Str, Str], hdrs ::
 #   }
 fn set_state(c :: Ctx, key :: Str, value :: Str) -> Ctx {
   { method: c.method, path: c.path, query: c.query, body: c.body, path_params: c.path_params, headers: c.headers, state: map.set(c.state, key, value) }
+}
+
+fn with_header(c :: Ctx, key :: Str, value :: Str) -> Ctx {
+  { method: c.method, path: c.path, query: c.query, body: c.body, path_params: c.path_params, headers: map.set(c.headers, str.to_lower(key), value), state: c.state }
 }
 
 fn get_state(c :: Ctx, key :: Str) -> Option[Str] {

@@ -106,7 +106,7 @@ fn is_close(msg :: WsMessage) -> Bool {
 # immediate frame or WsNoOp.
 # `on_message` is called for every inbound frame; return a WsAction reply.
 # Returns Err(Str) if the connection fails or drops with an error.
-fn dial[E](url :: Str, subprotocol :: Str, on_open :: () -> [E] WsAction, on_message :: (WsMessage) -> [E] WsAction) -> [net, E] Result[Unit, Str] {
+fn dial(url :: Str, subprotocol :: Str, on_open :: () -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] WsAction, on_message :: (WsMessage) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc] WsAction) -> [net, io, time, crypto, random, sql, fs_read, fs_write, concurrent, llm, proc] Result[Unit, Str] {
   net.dial_ws(url, subprotocol, on_open, on_message)
 }
 

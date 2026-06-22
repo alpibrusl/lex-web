@@ -158,11 +158,11 @@ fn compile(triples :: List[(Str, List[Str], HandlerBody)]) -> TrieNode {
 #
 # Resolution order at each node: literal first (Map.get O(log n)),
 # then param (single edge), then wildcard (terminates).
-fn lookup(t :: TrieNode, method :: Str, segs :: List[Str]) -> Option[(HandlerBody, Map[Str, Str])] {
+fn lookup(t :: TrieNode, method :: Str, segs :: List[Str]) -> [net] Option[(HandlerBody, Map[Str, Str])] {
   lookup_inner(t, method, segs, map.new())
 }
 
-fn lookup_inner(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> Option[(HandlerBody, Map[Str, Str])] {
+fn lookup_inner(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> [net] Option[(HandlerBody, Map[Str, Str])] {
   match list.head(segs) {
     None => {
       match map.get(t.handlers, method) {
@@ -187,7 +187,7 @@ fn lookup_inner(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[S
 
 # Fallback chain: try the :param edge, then the *wildcard edge.
 # Pulled out of lookup_inner to keep the literal-match arm flat.
-fn try_param_then_wildcard(t :: TrieNode, method :: Str, seg :: Str, all_segs :: List[Str], rest :: List[Str], params :: Map[Str, Str]) -> Option[(HandlerBody, Map[Str, Str])] {
+fn try_param_then_wildcard(t :: TrieNode, method :: Str, seg :: Str, all_segs :: List[Str], rest :: List[Str], params :: Map[Str, Str]) -> [net] Option[(HandlerBody, Map[Str, Str])] {
   match t.param {
     Some(pair_v) => {
       match pair_v {
@@ -204,7 +204,7 @@ fn try_param_then_wildcard(t :: TrieNode, method :: Str, seg :: Str, all_segs ::
   }
 }
 
-fn try_wildcard(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> Option[(HandlerBody, Map[Str, Str])] {
+fn try_wildcard(t :: TrieNode, method :: Str, segs :: List[Str], params :: Map[Str, Str]) -> [net] Option[(HandlerBody, Map[Str, Str])] {
   match t.wildcard {
     None => None,
     Some(pair_v) => {
