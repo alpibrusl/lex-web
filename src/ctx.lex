@@ -61,6 +61,10 @@ fn set_state(c :: Ctx, key :: Str, value :: Str) -> Ctx {
   { method: c.method, path: c.path, query: c.query, body: c.body, path_params: c.path_params, headers: c.headers, state: map.set(c.state, key, value) }
 }
 
+fn with_header(c :: Ctx, key :: Str, value :: Str) -> Ctx {
+  { method: c.method, path: c.path, query: c.query, body: c.body, path_params: c.path_params, headers: map.set(c.headers, str.to_lower(key), value), state: c.state }
+}
+
 fn get_state(c :: Ctx, key :: Str) -> Option[Str] {
   map.get(c.state, key)
 }

@@ -82,6 +82,10 @@ fn internal_error() -> Response {
   json_status(500, "{\"error\":\"internal server error\"}")
 }
 
+fn service_unavailable(detail :: Str) -> Response {
+  json_status(503, err_body("service unavailable", detail))
+}
+
 # RFC 7807 problem+json from a lex-schema Errors list.
 # `instance` should be the request path (ctx.path).
 fn problem(status :: Int, instance :: Str, errs :: e.Errors) -> Response {
