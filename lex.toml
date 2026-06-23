@@ -1,7 +1,7 @@
 [package]
 name    = "lex-web"
 version = "0.3.0"
-lex     = "0.9.7"
+lex     = "0.9.12"
 
 # 0.9.5: net.serve_ws_fn_actor (per-connection bridge actor for
 #        outbound sends — closes #4), std.net.serve_routed,
