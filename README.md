@@ -498,4 +498,4 @@ are safe since lex-lang v0.9.0 (#358, path canonicalization).
 
 ---
 
-Built under the principles of [Trust Without Comprehension](https://alpibru.com/manifesto).
+Built under the principles of [Trust Without Comprehension](https://lexlang.org/manifesto).
