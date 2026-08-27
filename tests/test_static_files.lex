@@ -60,9 +60,13 @@ fn test_404_unknown() -> Result[Unit, Str] {
   }
 }
 
+# 400, specifically. This previously accepted 400 OR 404, and the 404 arm never
+# occurred — an alternative no input reaches documents nothing and hides a
+# change in which one is returned. If rejecting traversal with 404 ever becomes
+# acceptable, widen this deliberately rather than by default.
 fn test_traversal_blocked() -> Result[Unit, Str] {
   let r := router.dispatch_pure(app(), t.get("/static/..%2Fsecret"))
-  if r.status == 400 or r.status == 404 {
+  if r.status == 400 {
     Ok(())
   } else {
     Err("traversal not blocked")

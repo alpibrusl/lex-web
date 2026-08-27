@@ -97,18 +97,30 @@ fn test_meta_status_attached() -> Result[Unit, Str] {
   }
 }
 
+# The exclusion is what makes this mean "the /users route carries the users
+# tag". Without it the fold is satisfied by any route that matches on some
+# conjunct, so a tag attached to the wrong route would still pass.
+#
+# The three exclusions cover the helper's three conjuncts, so none of them can
+# quietly stop discriminating: a tag never attached, a path never mounted, and
+# a method never routed. POST is deliberately not among them — tags are
+# declared on the SubRouter prefix, so POST /users carries "users" too, and
+# excluding it would assert something false.
+fn tagged(routes :: List[router.RouteRecord], method :: Str, pattern :: Str, tag :: Str) -> Bool {
+  list.fold(routes, false, fn (acc :: Bool, rec :: router.RouteRecord) -> Bool {
+    let carries := list.fold(rec.meta.tags, false, fn (a :: Bool, t :: Str) -> Bool {
+      a or t == tag
+    })
+    acc or rec.method == method and rec.pattern == pattern and carries
+  })
+}
+
 fn test_meta_tags_attached() -> Result[Unit, Str] {
   let routes := app().routes
-  let found := list.fold(routes, false, fn (acc :: Bool, rec :: router.RouteRecord) -> Bool {
-    let has_users := list.fold(rec.meta.tags, false, fn (a :: Bool, tag :: Str) -> Bool {
-      a or tag == "users"
-    })
-    acc or rec.method == "GET" and rec.pattern == "/users" and has_users
-  })
-  if found {
+  if tagged(routes, "GET", "/users", "users") and not tagged(routes, "GET", "/users", "never-attached") and not tagged(routes, "GET", "/never-mounted", "users") and not tagged(routes, "DELETE", "/users", "users") {
     Ok(())
   } else {
-    Err("tags missing")
+    Err("the users tag must be on GET /users, and must not appear for a tag, path or method that was never registered")
   }
 }
 

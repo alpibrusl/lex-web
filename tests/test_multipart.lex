@@ -151,11 +151,15 @@ fn wrong_content_type_returns_error() -> Result[Unit, Str] {
   }
 }
 
-# multipart/form-data WITHOUT a boundary parameter is invalid.
+# multipart/form-data WITHOUT a boundary parameter is invalid, and reports
+# kind="content-type" — the header never parses as multipart-with-boundary in
+# the first place, so the "boundary" kind (a malformed boundary) is not what
+# this input produces. Accepting either kind, as this did, asserted nothing
+# about which failure the caller actually sees.
 fn missing_boundary_returns_error() -> Result[Unit, Str] {
   let c := ctx_with_body("multipart/form-data", body_one_text("a", "1"))
   match mp.parse(c, default_limits()) {
-    Err(e) => if e.kind == "content-type" or e.kind == "boundary" {
+    Err(e) => if e.kind == "content-type" {
       Ok(())
     } else {
       Err(str.concat("expected kind=content-type or boundary, got: ", e.kind))
