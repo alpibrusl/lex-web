@@ -23,6 +23,16 @@ import "../src/testing" as t
 import "../src/test_fixtures" as tf
 
 # ---- Helpers -----------------------------------------------------
+# Whether a route was registered under that exact string. Always paired with an
+# exclusion at the call sites: asking only whether SOME route matched would be
+# satisfied by any route at all, so a mount that registered the wrong paths —
+# the failure these tests exist to catch — would still pass.
+fn has_route(routes :: List[Str], want :: Str) -> Bool {
+  list.fold(routes, false, fn (acc :: Bool, p :: Str) -> Bool {
+    acc or p == want
+  })
+}
+
 fn noop_handler(c :: ctx.Ctx) -> resp.Response {
   resp.no_content()
 }
@@ -170,19 +180,10 @@ fn mount_registers_three_routes() -> Result[Unit, Str] {
   let methods_and_paths := list.map(mounted.routes, fn (rec :: router.RouteRecord) -> Str {
     str.concat(rec.method, str.concat(" ", rec.pattern))
   })
-  let has_spec := list.fold(methods_and_paths, false, fn (acc :: Bool, p :: Str) -> Bool {
-    acc or p == "GET /openapi.json"
-  })
-  let has_docs := list.fold(methods_and_paths, false, fn (acc :: Bool, p :: Str) -> Bool {
-    acc or p == "GET /docs"
-  })
-  let has_redoc := list.fold(methods_and_paths, false, fn (acc :: Bool, p :: Str) -> Bool {
-    acc or p == "GET /redoc"
-  })
-  if has_spec and has_docs and has_redoc {
+  if has_route(methods_and_paths, "GET /openapi.json") and has_route(methods_and_paths, "GET /docs") and has_route(methods_and_paths, "GET /redoc") and not has_route(methods_and_paths, "GET /not-mounted") {
     Ok(())
   } else {
-    Err("mount did not register all three routes")
+    Err("mount must register exactly the three documented routes, and nothing under a path it never mounted")
   }
 }
 
@@ -192,13 +193,7 @@ fn mount_at_uses_custom_paths() -> Result[Unit, Str] {
   let patterns := list.map(mounted.routes, fn (rec :: router.RouteRecord) -> Str {
     rec.pattern
   })
-  let has_custom_spec := list.fold(patterns, false, fn (acc :: Bool, p :: Str) -> Bool {
-    acc or p == "/api/v1/spec.json"
-  })
-  let has_custom_docs := list.fold(patterns, false, fn (acc :: Bool, p :: Str) -> Bool {
-    acc or p == "/api/v1/swagger"
-  })
-  if has_custom_spec and has_custom_docs {
+  if has_route(patterns, "/api/v1/spec.json") and has_route(patterns, "/api/v1/swagger") and not has_route(patterns, "/openapi.json") {
     Ok(())
   } else {
     Err("mount_at did not honour custom paths")
