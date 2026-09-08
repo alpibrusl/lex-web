@@ -26,7 +26,7 @@
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV LEX_VERSION=0.9.5
+ENV LEX_VERSION=0.10.18
 
 # ---- System deps + Postgres ---------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
