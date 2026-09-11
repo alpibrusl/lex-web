@@ -38,7 +38,7 @@ fn verify_bearer(c :: ctx.Ctx, secret :: Bytes) -> [time] Result[jwt.Claims, res
     None => Err(resp.unauthorized("missing Bearer token")),
     Some(token) => match jwt.verify_hs256(secret, token) {
       Ok(claims) => Ok(claims),
-      Err(Expired) => Err(resp.unauthorized("token expired")),
+      Err(JwtExpired) => Err(resp.unauthorized("token expired")),
       Err(NotYetValid) => Err(resp.unauthorized("token not yet valid")),
       Err(_) => Err(resp.unauthorized("invalid token")),
     },
