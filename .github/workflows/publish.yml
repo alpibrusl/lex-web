@@ -48,7 +48,14 @@ jobs:
             -H "Authorization: Bearer $LEXHUB_ADMIN_SECRET" \
             -H "Content-Type: application/json" \
             -d '{"tenant_id":"alpibrusl","ttl_secs":3600}' | jq -r .token)
-          lex pkg publish --registry https://vcs.lexlang.org --token "$JWT"
+          tar -czf /tmp/pkg.tar.gz lex.toml src
+          curl -s -o /tmp/resp.json -w "HTTP_STATUS:%{http_code}\n" \
+            -X POST "https://vcs.lexlang.org/v1/pkg/publish" \
+            -H "Authorization: Bearer $JWT" \
+            --data-binary @/tmp/pkg.tar.gz
+          echo "--- response body ---"
+          cat /tmp/resp.json
+          echo
 
       - name: Set visibility public
         env:
