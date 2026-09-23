@@ -67,6 +67,32 @@ fn mount_dir(r :: router.Router, prefix :: Str, dir :: Str) -> router.Router {
   })
 }
 
+# `GenericRouter[e]` counterpart to `mount_dir`: registers on the
+# caller's own chosen row `e` instead of `Router`'s fixed one.
+# `serve_from_dir` is already narrow (`[fs_read]` only); `[fs_read | e]`
+# is a mixed row — `fs_read` is this route's own fixed lower bound,
+# `e` is whatever else the rest of the caller's router needs — so one
+# `GenericRouter[e]` can mount static files alongside routes that need
+# `env`/`fs_walk`/anything else, all under the one row `e` names.
+#
+# `-> [| e]` on THIS function's own return type is required even though
+# building a router performs no effect at all: the lambda below is a
+# literal expression checked in its own body-checking pass, and that
+# pass resolves a lambda's row-var name against the *enclosing
+# function's own declared open row* (recorded once, when the enclosing
+# function itself is checked) — not generally against any of its type
+# parameters. `e` appears in `GenericRouter[e]`'s type here regardless,
+# but that alone doesn't seed the lookup the lambda needs; dropping
+# `[| e]` from this signature reproduces "unbound effect-row variable
+# `e`" at the lambda below, even though `e` is a perfectly valid,
+# declared parameter.
+fn mount_dir_generic[e](r :: router.GenericRouter[e], prefix :: Str, dir :: Str) -> [| e] router.GenericRouter[e] {
+  let pattern := str.concat(strip_trailing_slash(prefix), "/*path")
+  router.route_generic(r, "GET", pattern, fn (c :: ctx.Ctx) -> [fs_read | e] resp.Response {
+    serve_from_dir(c, dir)
+  })
+}
+
 fn serve_from_dir(c :: ctx.Ctx, dir :: Str) -> [fs_read] resp.Response {
   match ctx.path_param(c, "path") {
     None => resp.not_found(),
