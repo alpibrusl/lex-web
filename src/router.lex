@@ -116,7 +116,7 @@ fn with_response_model(m :: RouteMeta, validator :: v.Validator) -> RouteMeta {
 # the rest of the record is unchanged from v0.2.
 type RouteRecord = { method :: Str, pattern :: Str, segments :: List[Str], body :: rt.HandlerBody, validator :: Option[v.Validator], meta :: RouteMeta }
 
-type Router = { routes :: List[RouteRecord], middleware :: List[mw.MiddlewareKind], trie :: rt.TrieNode, security_schemes :: List[o2.OAuth2Scheme] }
+type Router = { routes :: List[RouteRecord], middleware :: List[mw.MiddlewareKind], trie :: rt.TrieNode[rt.HandlerBody], security_schemes :: List[o2.OAuth2Scheme] }
 
 # ---- Construction ------------------------------------------------
 fn new() -> Router {
@@ -134,7 +134,7 @@ fn add_security_scheme(r :: Router, scheme :: o2.OAuth2Scheme) -> Router {
 
 # Rebuild the trie from a list of records. O(N) where N = route count;
 # only paid at route registration, not at dispatch.
-fn compile_trie(records :: List[RouteRecord]) -> rt.TrieNode {
+fn compile_trie(records :: List[RouteRecord]) -> rt.TrieNode[rt.HandlerBody] {
   rt.compile(list.map(records, fn (rec :: RouteRecord) -> (Str, List[Str], rt.HandlerBody) {
     (rec.method, rec.segments, rec.body)
   }))
@@ -488,5 +488,69 @@ fn split_path(path :: Str) -> List[Str] {
   list.filter(str.split(path, "/"), fn (s :: Str) -> Bool {
     not str.is_empty(s)
   })
+}
+
+# ---- GenericRouter[e] — one caller-chosen effect row, no bypass ----------
+#
+# `Router` above fixes `HEff`'s effect row to one hardcoded, wide literal
+# set, and its own doc comment says why: "Lex 0.9.4+ doesn't support
+# effect-row variables on closures stored in record fields." That's no
+# longer true — it was never revisited once the language grew genuine
+# effect-row polymorphism (`fn f[e](x :: T) -> [| e] R`, the same
+# mechanism `list.map`'s own `E` already relies on internally), which
+# DOES work stored in a record field, proven by this type existing at all.
+#
+# `GenericRouter[e]` fixes that gap directly: one effect row `e`, chosen
+# ONCE by the application building the router (e.g. `[env, fs_walk, ...]`
+# for one app, something narrower for another), shared by every route
+# registered on it. A route whose handler needs something the row
+# doesn't have is a type error at registration, exactly like any other
+# effect mismatch — never a reason to dispatch outside the router.
+#
+# What v1 deliberately does NOT carry over from `Router`: RouteMeta /
+# OpenAPI / response_model / security schemes / streaming / middleware.
+# Reach for `Router` when you need those and its fixed row already
+# covers your handlers; reach for `GenericRouter[e]` when a route needs
+# an effect the fixed row doesn't have. The two are independent — no
+# migration is required to adopt this for new routes.
+type GenericRouter[e] = { routes :: List[(Str, List[Str], (ctx.Ctx) -> [| e] resp.Response)], trie :: rt.TrieNode[(ctx.Ctx) -> [| e] resp.Response] }
+
+fn new_generic[e]() -> GenericRouter[e] {
+  { routes: [], trie: rt.empty_node() }
+}
+
+# Register a handler at the caller's own chosen row `e` — the same `e`
+# every other route on this router shares. `method`/`pattern` follow the
+# same rules as `route`/`route_effectful` (`:param`, `*wildcard`).
+fn route_generic[e](r :: GenericRouter[e], method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> [| e] resp.Response) -> GenericRouter[e] {
+  let rec := (str.to_upper(method), split_path(pattern), handler)
+  let new_routes := list.concat(r.routes, [rec])
+  { routes: new_routes, trie: compile_generic_trie(new_routes) }
+}
+
+# Rebuild the trie from the route list — mirrors `compile_trie` above,
+# specialised to the handler shape `GenericRouter[e]` stores. The lambda
+# handed to `list.map` only repackages the tuple; it never *calls*
+# `handler`, so it needs no effect annotation of its own (unlike a
+# lambda that invokes a row-polymorphic closure inside `list.map`,
+# which does — see lookup/dispatch below for that case instead).
+fn compile_generic_trie[e](records :: List[(Str, List[Str], (ctx.Ctx) -> [| e] resp.Response)]) -> rt.TrieNode[(ctx.Ctx) -> [| e] resp.Response] {
+  rt.compile(list.map(records, fn (rec :: (Str, List[Str], (ctx.Ctx) -> [| e] resp.Response)) -> (Str, List[Str], (ctx.Ctx) -> [| e] resp.Response) {
+    rec
+  }))
+}
+
+# Dispatch a request through a `GenericRouter[e]`. No middleware stack
+# (v1 scope, see the type's own doc comment) — a matched handler is
+# called directly; no match is a 404.
+fn dispatch_generic[e](r :: GenericRouter[e], req :: ctx.RawRequest) -> [| e] resp.Response {
+  let method := str.to_upper(req.method)
+  let path_segs := split_path(req.path)
+  match rt.lookup(r.trie, method, path_segs) {
+    None => resp.not_found(),
+    Some(matched) => match matched {
+      (handler, params) => handler(ctx.from_request(req, params)),
+    },
+  }
 }
 
