@@ -14,6 +14,8 @@ import "../src/response" as resp
 
 import "../src/router" as router
 
+import "../src/router_pure" as router_pure
+
 import "../src/middleware" as mw
 
 import "../src/stream" as strm
@@ -329,8 +331,18 @@ fn stream_post_middleware_stamps_headers() -> [io, time, crypto, random, sql, fs
 }
 
 # ---- Suite -------------------------------------------------------
+# dispatch_pure delegates to router_pure; both tiers must answer
+# identically for the same route. (router_pure's own suite lives in
+# test_router_pure.lex, which must not import router.)
+fn pure_tier_agrees() -> Result[Unit, Str] {
+  let pr := router_pure.route(router_pure.new(), "GET", "/users/:id", echo_param)
+  let a := router.dispatch_pure(simple_router(), t.get("/users/42"))
+  let b := router_pure.dispatch_pure(pr, t.get("/users/42"))
+  t.all([t.assert_status(a, b.status), t.assert_body_eq(a, b.body)])
+}
+
 fn suite() -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval] List[Result[Unit, Str]] {
-  [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end(), response_model_filters_unknown_fields(), response_model_500s_on_missing_required_field(), response_model_500s_on_unparseable_body(), no_response_model_means_passthrough(), dispatch_outcome_routes_stream_to_dstream(), dispatch_outcome_routes_plain_to_dplain(), dispatch_outcome_unmatched_is_dplain_404(), legacy_dispatch_500s_on_stream_route(), stream_post_middleware_stamps_headers()]
+  [static_route_matches(), static_route_not_found(), param_route_matches_and_binds(), param_does_not_match_empty_segment(), method_mismatch_gives_404(), post_matches_own_method(), splat_captures_single_segment(), splat_captures_multiple_segments(), two_params_both_bound(), literal_always_beats_param(), static_before_param_wins(), method_is_case_insensitive(), param_name_conflict_first_registered_wins(), literal_falls_back_to_param_on_dead_end(), response_model_filters_unknown_fields(), response_model_500s_on_missing_required_field(), response_model_500s_on_unparseable_body(), no_response_model_means_passthrough(), dispatch_outcome_routes_stream_to_dstream(), dispatch_outcome_routes_plain_to_dplain(), dispatch_outcome_unmatched_is_dplain_404(), legacy_dispatch_500s_on_stream_route(), stream_post_middleware_stamps_headers(), pure_tier_agrees()]
 }
 
 # `lex test` calls run_all and reports the file as failed iff run_all

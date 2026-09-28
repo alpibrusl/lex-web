@@ -95,6 +95,7 @@ closest to what you're building.
 | `middleware_custom.lex` | Bearer-token gate + response-stamping via `mw.custom` | `middleware.custom` (#27) |
 | `auth_modes.lex`        | HTTP Basic + API key (header / cookie) + JWT in one app | `auth_basic`, `auth_apikey`, `auth` (#26) |
 | `upload.lex`            | Multipart file upload — `title` text field + `file` upload, returns parsed metadata as JSON | `multipart.parse`, `multipart.find_file`, `multipart.find_text` (#25) |
+| `minimal_api.lex`       | One pure route on `:8083`; runs under `--allow-effects net` alone | `router_pure` (see "Minimal grant") |
 
 Run any of them with `lex run --allow-effects io,net,time examples/<file> main`
 (some need additional effects — each file's header comment carries the exact
@@ -346,9 +347,10 @@ lex-web respects Lex's effect system. Effects propagate precisely:
 
 | Function | Effects |
 |----------|---------|
-| `dispatch_pure` | none (for tests) |
-| `dispatch` | `[io, time]` (logger + request-id middleware) |
-| `middleware.run_post` | `[io, time]` |
+| `router_pure.dispatch_pure` | none |
+| `router.dispatch_pure` | none, but see "Minimal grant" below |
+| `router.dispatch` / `dispatch_outcome` | `[io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval]` (declared; the union of any handler or middleware) |
+| `middleware.run_pre` / `run_post` | `[io, time, crypto, random, sql, fs_read, fs_write, net, concurrent]` |
 | `lifespan.run_startup` / `run_shutdown` | `[io, time]` |
 | `background.run_all` | `[io, time]` |
 | `static_files.serve_from_dir` | `[io]` |
@@ -356,6 +358,40 @@ lex-web respects Lex's effect system. Effects propagate precisely:
 | Handler closures | determined by what the handler body calls |
 
 Use `dispatch_pure` in test suites — all tests stay effect-free and fast.
+
+### Minimal grant: `router_pure` vs `router`
+
+Lex checks effects per *program*, and `lex run` refuses to start one whose
+compiled functions declare an effect that `--allow-effects` has not granted —
+**declared, not called**. `router.lex` holds the middleware-aware `dispatch`,
+whose row is the twelve effects above, and it imports `middleware.lex` (and
+through it `lex-log`: request ids, tracing). So a service that imports
+`router` only for `new` / `route` / `dispatch_pure` still needs, at runtime,
+`--allow-effects approval,concurrent,crypto,fs_read,fs_write,io,llm,net,proc,random,sql,time`
+— `dispatch_pure` being pure does not help, because `dispatch` is compiled in
+next to it. (`lex check` prints this as `required effects:`.)
+
+A service that needs no middleware and no effectful routes imports
+`router_pure` instead — same `new` / `route` / `dispatch_pure` names, one
+changed import line — and runs with `net` alone:
+
+```lex
+import "../src/router_pure" as router
+
+fn app() -> router.Router {
+  router.route(router.new(), "GET", "/quote/:sym", quote)
+}
+```
+
+```sh
+lex run --allow-effects net examples/minimal_api.lex main
+```
+
+`router_pure` gives up `use_mw`, `route_effectful`, `route_stream`,
+`handler_json`, per-route metadata, OpenAPI export and OAuth2 schemes;
+`router_pure.Router` is a different type from `router.Router`. It imports
+only pure modules — keep it that way (CI runs
+`tests/test_router_pure.lex` under an empty grant).
 
 ## Path patterns
 

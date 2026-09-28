@@ -55,6 +55,8 @@ import "./middleware" as mw
 
 import "./route_trie" as rt
 
+import "./router_pure" as rp
+
 import "lex-schema/validator" as v
 
 import "lex-schema/json_value" as jv
@@ -271,25 +273,7 @@ fn dispatch(r :: Router, req :: ctx.RawRequest) -> [io, time, crypto, random, sq
 # a synthetic 500 — tests that need effectful handlers should run
 # under dispatch + the appropriate --allow-effects gate.
 fn dispatch_pure(r :: Router, req :: ctx.RawRequest) -> resp.Response {
-  let method := str.to_upper(req.method)
-  let path_segs := split_path(req.path)
-  match rt.lookup(r.trie, method, path_segs) {
-    None => resp.not_found(),
-    Some(matched) => {
-      let body := match matched {
-        (b, _) => b,
-      }
-      let params := match matched {
-        (_, p) => p,
-      }
-      let c := ctx.from_request(req, params)
-      match body {
-        HPure(h, rm) => apply_response_model(h(c), rm),
-        HEff(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_effectful and cannot be invoked from dispatch_pure. Use dispatch with --allow-effects, or restrict the route to a pure handler.", "text/plain"),
-        HStream(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_stream and cannot be invoked from dispatch_pure. Use dispatch_outcome and match DStream in your main bridge.", "text/plain"),
-      }
-    },
-  }
+  rp.dispatch_trie(r.trie, req)
 }
 
 # ---- dispatch_outcome (#29) --------------------------------------
@@ -420,16 +404,7 @@ fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody,
 # (logger, CORS, request-id, etc.) runs over the *replaced* response,
 # matching the standard "framework owns the 500 shape" contract.
 fn apply_response_model(response :: resp.Response, rm :: Option[v.Validator]) -> resp.Response {
-  match rm {
-    None => response,
-    Some(validator) => match v.validate_str(validator, response.body) {
-      Err(_) => {
-        let body := "{\"error\":\"response_model: handler returned data that does not conform to the declared schema\"}"
-        { body: body, status: 500, headers: map.set(response.headers, "content-type", "application/json") }
-      },
-      Ok(j) => { body: jv.stringify(j), status: response.status, headers: response.headers },
-    },
-  }
+  rp.apply_response_model(response, rm)
 }
 
 # ---- Route matching ----------------------------------------------
@@ -485,8 +460,6 @@ fn match_segments(pattern :: List[Str], actual :: List[Str], params :: Map[Str, 
 }
 
 fn split_path(path :: Str) -> List[Str] {
-  list.filter(str.split(path, "/"), fn (s :: Str) -> Bool {
-    not str.is_empty(s)
-  })
+  rp.split_path(path)
 }
 
