@@ -9,20 +9,25 @@
 #
 #   2. Filesystem-backed. `mount_dir(router, prefix, dir)` adds a
 #      catch-all route that resolves `prefix/<rest>` against `dir/<rest>`
-#      using `std.io.read`. `[io]`-flavoured (registered via
-#      `route_effectful`).
+#      using `fs.read_to_string`. `[fs_read]`-flavoured (registered via
+#      `route_effectful`), so the row names the filesystem — and
+#      `--allow-fs-read <dir>` bounds which files a mounted directory can
+#      actually serve. This used to be `io.read` under `[io]`, an effect
+#      documented as "console / stdio" (lex-lang#882); a static file
+#      server is the worst possible place for a row that does not say it
+#      reads files.
 #
 # Both reject path-traversal attempts (`..`, leading `/`).
 #
 # Effects:
 #   mount_map / serve_from_map — none
-#   mount_dir / serve_from_dir — [io]
+#   mount_dir / serve_from_dir — [fs_read]
 
 import "std.str" as str
 
 import "std.map" as map
 
-import "std.io" as io
+import "std.fs" as fs
 
 import "./ctx" as ctx
 
@@ -62,14 +67,14 @@ fn mount_dir(r :: router.Router, prefix :: Str, dir :: Str) -> router.Router {
   })
 }
 
-fn serve_from_dir(c :: ctx.Ctx, dir :: Str) -> [io] resp.Response {
+fn serve_from_dir(c :: ctx.Ctx, dir :: Str) -> [fs_read] resp.Response {
   match ctx.path_param(c, "path") {
     None => resp.not_found(),
     Some(path) => if is_unsafe_path(path) {
       resp.bad_request("invalid path")
     } else {
       let full := str.concat(strip_trailing_slash(dir), str.concat("/", path))
-      match io.read(full) {
+      match fs.read_to_string(full) {
         Err(_) => resp.not_found(),
         Ok(body) => with_inferred_ct(body, path),
       }
