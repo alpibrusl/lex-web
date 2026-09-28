@@ -29,8 +29,8 @@ jobs:
         run: |
           v=$(grep -m1 '^lex ' lex.toml | sed 's/.*= *"\(.*\)"/\1/')
           if [ -z "$v" ]; then
-            echo "::warning::lex.toml has no top-level 'lex' version pin; falling back to 0.10.18" >&2
-            v="0.10.18"
+            echo "::warning::lex.toml has no top-level 'lex' version pin; falling back to 0.11.71" >&2
+            v="0.11.71"
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
