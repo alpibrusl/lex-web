@@ -2,6 +2,7 @@
 name    = "lex-web"
 version = "0.3.0"
 lex     = "0.11.71"
+description = "FastAPI-style HTTP/REST framework: typed router with path params, request validation, middleware, JWT/OAuth2/API-key auth, OpenAPI docs, WebSocket, static files, a test client, and a pure dispatcher (dispatch_pure) for effect-free handlers"
 
 # 0.9.5: net.serve_ws_fn_actor (per-connection bridge actor for
 #        outbound sends — closes #4), std.net.serve_routed,
