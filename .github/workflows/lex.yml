@@ -76,6 +76,24 @@ jobs:
             echo "expected a grant without sql to be refused"; exit 1
           fi
 
+      # serve / serve_with / serve_quic take the handler's effect row (#61): a
+      # [sql] handler is served under `net,sql`, and a grant without `sql` is
+      # refused. The old literal `[E]` could not unify with any concrete row.
+      - name: serve_with runs a [sql] handler under net,sql only
+        run: |
+          set -euo pipefail
+          lex run --allow-effects net,sql tests/test_serve_sql.lex main > /tmp/serve_sql.log 2>&1 &
+          pid=$!
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8123/ > /tmp/serve_sql.out 2>/dev/null && break
+            sleep 1
+          done
+          kill $pid || true
+          test "$(cat /tmp/serve_sql.out)" = "ok"
+          if lex run --allow-effects net tests/test_serve_sql.lex main >/dev/null 2>&1; then
+            echo "expected a grant without sql to be refused"; exit 1
+          fi
+
       - name: Pure service serves under --allow-effects net only
         run: |
           set -euo pipefail
