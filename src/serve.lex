@@ -39,11 +39,12 @@
 # `serve` helper works on 0.9.0+.
 #
 # Effects:
-#   serve       — [net, E]
-#   serve_with  — [net, E]
-#   serve_quic  — [net, E]
+#   serve       — [net | e]
+#   serve_with  — [net | e]
+#   serve_quic  — [net | e]
 #
-# `E` is the effect row the caller's handler emits — propagated
+# `e` is a row variable (lowercase, written `[| e]`) standing for the
+# effect row the caller's handler emits — propagated
 # back to the `main` site so the user's effect signature is honest
 # about what the handlers can do.
 
@@ -51,7 +52,7 @@ import "std.net" as net
 
 # HTTP/1.1 listener (no opts). Equivalent to `net.serve_fn` —
 # included for namespace parity with `serve_with` and `serve_quic`.
-fn serve[E](port :: Int, handler :: (Request) -> [E] Response) -> [net, E] Nil {
+fn serve[e](port :: Int, handler :: (Request) -> [| e] Response) -> [net | e] Nil {
   net.serve_fn(port, handler)
 }
 
@@ -62,7 +63,7 @@ fn serve[E](port :: Int, handler :: (Request) -> [E] Response) -> [net, E] Nil {
 #
 # Build the opts inline as a record literal or get the defaults
 # via `net.default_opts()`.
-fn serve_with[E](port :: Int, handler :: (Request) -> [E] Response, opts :: { http2 :: Bool, inline_vm :: Bool, host :: Str }) -> [net, E] Nil {
+fn serve_with[e](port :: Int, handler :: (Request) -> [| e] Response, opts :: { http2 :: Bool, inline_vm :: Bool, host :: Str }) -> [net | e] Nil {
   net.serve_fn_with(port, handler, opts)
 }
 
@@ -84,7 +85,7 @@ fn serve_with[E](port :: Int, handler :: (Request) -> [E] Response, opts :: { ht
 # TCP listener you may also have running. Production deployments
 # typically pair an HTTP/1.1+2 listener on TCP:443 with an HTTP/3
 # listener on UDP:443.
-fn serve_quic[E](port :: Int, tls :: TlsConfig, handler :: (Request) -> [E] Response) -> [net, E] Nil {
+fn serve_quic[e](port :: Int, tls :: TlsConfig, handler :: (Request) -> [| e] Response) -> [net | e] Nil {
   net.serve_quic_fn(port, tls, handler)
 }
 
