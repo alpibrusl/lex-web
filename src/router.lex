@@ -222,6 +222,7 @@ fn attach_meta(r :: Router, method :: Str, pattern :: Str, meta :: RouteMeta) ->
         HPure(h, _) => HPure(h, meta.response_model),
         HEff(h, _) => HEff(h, meta.response_model),
         HStream(h, _) => HStream(h, meta.response_model),
+        HNamed(n) => HNamed(n),
       }
       { method: rec.method, pattern: rec.pattern, segments: rec.segments, body: new_body, validator: rec.validator, meta: meta }
     } else {
@@ -335,6 +336,7 @@ fn run_with_middleware_outcome(mws :: List[mw.MiddlewareKind], body :: rt.Handle
         let processed := mw.run_post(mws, c2, stub)
         DStream({ body: sr.body, status: processed.status, headers: processed.headers })
       },
+      HNamed(_) => DPlain(mw.run_post(mws, c2, resp.with_ct(500, "lex-web: this route was registered via route_named. Use router_pure.dispatch_with.", "text/plain"))),
     },
   }
 }
@@ -384,6 +386,7 @@ fn run_with_middleware_h(mws :: List[mw.MiddlewareKind], body :: rt.HandlerBody,
         HPure(h, rm) => apply_response_model(h(c2), rm),
         HEff(h, rm) => apply_response_model(h(c2), rm),
         HStream(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_stream. Use dispatch_outcome and match DStream in your main bridge.", "text/plain"),
+        HNamed(_) => resp.with_ct(500, "lex-web: this route was registered via route_named. Use router_pure.dispatch_with.", "text/plain"),
       }
       mw.run_post(mws, c2, raw_resp)
     },

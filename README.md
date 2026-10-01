@@ -348,6 +348,7 @@ lex-web respects Lex's effect system. Effects propagate precisely:
 | Function | Effects |
 |----------|---------|
 | `router_pure.dispatch_pure` | none |
+| `router_pure.dispatch_with` | exactly the resolver's row (`[|e]`) |
 | `router.dispatch_pure` | none, but see "Minimal grant" below |
 | `router.dispatch` / `dispatch_outcome` | `[io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval]` (declared; the union of any handler or middleware) |
 | `middleware.run_pre` / `run_post` | `[io, time, crypto, random, sql, fs_read, fs_write, net, concurrent]` |
@@ -386,6 +387,34 @@ fn app() -> router.Router {
 ```sh
 lex run --allow-effects net examples/minimal_api.lex main
 ```
+
+### Effectful routes under a least-privilege grant: `route_named` + `dispatch_with`
+
+`router_pure` holds no handler closures with an effect row. To serve
+effectful handlers while keeping the grant as narrow as they really are,
+register routes by *name* and resolve the name yourself:
+
+```lex
+import "../src/router_pure" as router
+
+fn app() -> router.Router {
+  router.route_named(router.new(), "GET", "/invoices/:id", "get_one")
+}
+
+fn resolve(name :: Str, c :: ctx.Ctx) -> [sql] resp.Response {
+  if name == "get_one" { get_one(c, db) } else { resp.not_found() }
+}
+
+fn handle(req :: ctx.RawRequest) -> [sql] resp.Response {
+  router.dispatch_with(app(), req, resolve)
+}
+```
+
+`dispatch_with` is generic in the effect row, so it declares exactly what
+`resolve` declares: this service runs under `--allow-effects net,sql`, where
+`router.dispatch` would demand all twelve. Middleware does not run (its row
+is wide), and a route registered with `route` instead of `route_named` is a
+500 here. CI covers it in `tests/test_dispatch_with_sql.lex`.
 
 `router_pure` gives up `use_mw`, `route_effectful`, `route_stream`,
 `handler_json`, per-route metadata, OpenAPI export and OAuth2 schemes;

@@ -58,10 +58,13 @@
 # nodes. `dispatch` matches HPure/HEff (HStream → 500 with a hint);
 # `dispatch_pure` honours only `HPure`; `dispatch_outcome` (#29)
 # matches all three and returns a sum-typed result. The wide effect
+# `HNamed` (#59) holds no closure at all, only a route name the caller
+# resolves in `router_pure.dispatch_with`, so the dispatcher's effect
+# row is whatever the caller's resolver declares.
 # set on `HEff` / `HStream` is intentionally generous: narrow the
 # handler *body*, not the type, per the lex agent-guidelines.
 
-type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval] resp.Response, Option[v.Validator])) | HStream(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval] stream.StreamResponse, Option[v.Validator]))
+type HandlerBody = HPure(((ctx.Ctx) -> resp.Response, Option[v.Validator])) | HEff(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval] resp.Response, Option[v.Validator])) | HStream(((ctx.Ctx) -> [io, time, crypto, random, sql, fs_read, fs_write, net, concurrent, llm, proc, approval] stream.StreamResponse, Option[v.Validator])) | HNamed(Str)
 
 import "std.str" as str
 

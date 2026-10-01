@@ -65,6 +65,17 @@ jobs:
       - name: Pure router needs no effects
         run: lex run tests/test_router_pure.lex run_all
 
+      # dispatch_with takes the caller's effect row (#59): a service whose
+      # resolver is [sql] runs under `sql` alone, and a grant without it
+      # is refused. router.dispatch would demand all twelve effects.
+      - name: dispatch_with runs under the resolver's row only
+        run: |
+          set -euo pipefail
+          lex run --allow-effects sql tests/test_dispatch_with_sql.lex run_all
+          if lex run --allow-effects net tests/test_dispatch_with_sql.lex run_all >/dev/null 2>&1; then
+            echo "expected a grant without sql to be refused"; exit 1
+          fi
+
       - name: Pure service serves under --allow-effects net only
         run: |
           set -euo pipefail

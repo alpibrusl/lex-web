@@ -61,8 +61,49 @@ fn empty_router_is_404() -> Result[Unit, Str] {
   t.assert_status(router.dispatch_pure(router.new(), t.get("/")), 404)
 }
 
+fn resolve(name :: Str, c :: ctx.Ctx) -> resp.Response {
+  if name == "quote" {
+    quote(c)
+  } else {
+    if name == "health" {
+      health(c)
+    } else {
+      resp.not_found()
+    }
+  }
+}
+
+fn named_app() -> router.Router {
+  (router.new() |> fn (r :: router.Router) -> router.Router {
+    router.route_named(r, "GET", "/quote/:sym", "quote")
+  }) |> fn (r :: router.Router) -> router.Router {
+    router.route_named(r, "get", "/health", "health")
+  }
+}
+
+fn named_route_resolves_with_params() -> Result[Unit, Str] {
+  let r := router.dispatch_with(named_app(), t.get("/quote/lex"), resolve)
+  t.all([t.assert_status(r, 200), t.assert_body_eq(r, "lex")])
+}
+
+fn named_route_method_is_case_insensitive() -> Result[Unit, Str] {
+  t.assert_status(router.dispatch_with(named_app(), t.get("/health"), resolve), 200)
+}
+
+fn named_unknown_path_and_method_are_404() -> Result[Unit, Str] {
+  t.all([t.assert_status(router.dispatch_with(named_app(), t.get("/nope"), resolve), 404), t.assert_status(router.dispatch_with(named_app(), t.post("/health", ""), resolve), 404)])
+}
+
+fn closure_route_is_not_served_by_dispatch_with() -> Result[Unit, Str] {
+  t.assert_status(router.dispatch_with(app(), t.get("/health"), resolve), 500)
+}
+
+fn named_route_is_not_served_by_dispatch_pure() -> Result[Unit, Str] {
+  t.assert_status(router.dispatch_pure(named_app(), t.get("/health")), 500)
+}
+
 fn suite() -> List[Result[Unit, Str]] {
-  [param_route_binds(), method_is_case_insensitive(), unknown_path_is_404(), wrong_method_is_404(), empty_router_is_404()]
+  [param_route_binds(), method_is_case_insensitive(), unknown_path_is_404(), wrong_method_is_404(), empty_router_is_404(), named_route_resolves_with_params(), named_route_method_is_case_insensitive(), named_unknown_path_and_method_are_404(), closure_route_is_not_served_by_dispatch_with(), named_route_is_not_served_by_dispatch_pure()]
 }
 
 fn run_all() -> Unit {
