@@ -25,6 +25,10 @@
 # stream, lex-schema). Keep it that way: `lex check src/router_pure.lex`
 # must print no `required effects:` line, and CI enforces it.
 #
+# `route_named` + `dispatch_with` serve effectful handlers under the
+# narrowest grant: the router stores a name, the caller's resolver carries
+# the effect row (#59).
+#
 # What you give up versus router.lex: middleware (`use_mw`), effectful
 # and streaming routes, per-route metadata, OpenAPI export, OAuth2
 # schemes. `dispatch_pure` never ran middleware or effectful handlers
@@ -61,6 +65,37 @@ fn route(r :: Router, method :: Str, pattern :: Str, handler :: (ctx.Ctx) -> res
   { trie: rt.insert(r.trie, str.to_upper(method), split_path(pattern), HPure(handler, None)) }
 }
 
+# Register a route by name instead of by closure (#59). The router holds
+# no handler, so it carries no effect row: `dispatch_with` hands the
+# matched name and context to a resolver the caller supplies, and the
+# whole dispatch declares exactly the resolver's row. A service that
+# wants a least-privilege grant (say `net,sql`) registers its routes
+# here and resolves them with a `[sql]` function, where `router.dispatch`
+# would demand all twelve effects.
+fn route_named(r :: Router, method :: Str, pattern :: Str, name :: Str) -> Router {
+  { trie: rt.insert(r.trie, str.to_upper(method), split_path(pattern), HNamed(name)) }
+}
+
+# Match the request and call `resolve(name, ctx)`. Path params are bound
+# on the ctx as in `dispatch_pure`. No match is a 404; a route that was
+# registered with a closure (`route`) is a 500 here, since its handler is
+# not reachable through a name. Middleware does not run: its row is wide.
+fn dispatch_with[e](r :: Router, req :: ctx.RawRequest, resolve :: (Str, ctx.Ctx) -> [| e] resp.Response) -> [| e] resp.Response {
+  let method := str.to_upper(req.method)
+  match rt.lookup(r.trie, method, split_path(req.path)) {
+    None => resp.not_found(),
+    Some(matched) => {
+      let c := ctx.from_request(req, match matched {
+        (_, p) => p,
+      })
+      match matched {
+        (HNamed(name), _) => resolve(name, c),
+        _ => resp.with_ct(500, "lex-web: dispatch_with only serves routes registered via route_named.", "text/plain"),
+      }
+    },
+  }
+}
+
 # Pure dispatcher: honours only HPure routes. HEff / HStream routes
 # (only reachable through a table built by router.lex) resolve to a
 # synthetic 500 instead of running.
@@ -86,6 +121,7 @@ fn dispatch_trie(trie :: rt.TrieNode, req :: ctx.RawRequest) -> resp.Response {
         HPure(h, rm) => apply_response_model(h(c), rm),
         HEff(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_effectful and cannot be invoked from dispatch_pure. Use dispatch with --allow-effects, or restrict the route to a pure handler.", "text/plain"),
         HStream(_, _) => resp.with_ct(500, "lex-web: this route was registered via route_stream and cannot be invoked from dispatch_pure. Use dispatch_outcome and match DStream in your main bridge.", "text/plain"),
+        HNamed(_) => resp.with_ct(500, "lex-web: this route was registered via route_named and cannot be invoked from dispatch_pure. Use dispatch_with.", "text/plain"),
       }
     },
   }
